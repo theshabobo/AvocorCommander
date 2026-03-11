@@ -89,7 +89,21 @@ public class UpdateService
         if (!IsConfigured) return null;
 
         var url      = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
-        var json     = await _api.GetStringAsync(url);
+        var response = await _api.GetAsync(url);
+
+        // 404 = no releases published yet → treat as "up to date"
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            return null;
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            throw new InvalidOperationException(
+                $"GitHub API returned {(int)response.StatusCode} {response.ReasonPhrase}.\n" +
+                body[..Math.Min(300, body.Length)]);
+        }
+
+        var json     = await response.Content.ReadAsStringAsync();
         var release  = JsonSerializer.Deserialize<GitHubRelease>(json);
         if (release == null) return null;
 

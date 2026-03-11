@@ -182,9 +182,9 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
             else
                 UpdateStatus = "Up to date  ✓";
         }
-        catch
+        catch (Exception ex)
         {
-            UpdateStatus = "Check failed — no connection?";
+            UpdateStatus = $"Check failed: {ex.Message}";
         }
         finally
         {
