@@ -13,6 +13,9 @@
     <FileVersion>3.0.1.0</FileVersion>
     <Product>Avocor Commander</Product>
     <Company>Avocor</Company>
+    <!-- Single-file publish: bundle native DLLs and suppress .pdb -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <DebugType>none</DebugType>
   </PropertyGroup>
 
   <ItemGroup>
