@@ -4,7 +4,7 @@
         xmlns:vm="clr-namespace:AvocorCommander.ViewModels"
         xmlns:views="clr-namespace:AvocorCommander.Views"
         xmlns:core="clr-namespace:AvocorCommander.Core"
-        Title="Avocor Commander  V3.0"
+        Title="Avocor Commander"
         Width="1200" Height="760"
         MinWidth="900" MinHeight="580"
         WindowStartupLocation="CenterScreen"
@@ -64,10 +64,7 @@
                         <TextBlock Text="{Binding AppTitle}"
                                    Foreground="White"
                                    FontSize="13" FontWeight="Bold"/>
-                        <TextBlock Foreground="#3A5878" FontSize="10" Margin="0,3,0,0">
-                            <Run Text="Display Control  ·  "/>
-                            <Run Text="{Binding AppVersion, Mode=OneWay}"/>
-                        </TextBlock>
+                        <TextBlock Text="Display Control" Foreground="#3A5878" FontSize="10" Margin="0,3,0,0"/>
                     </StackPanel>
                 </Border>
 
