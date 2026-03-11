@@ -1,0 +1,173 @@
+<UserControl x:Class="AvocorCommander.Views.SchedulerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:core="clr-namespace:AvocorCommander.Core">
+
+    <UserControl.Resources>
+        <core:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <core:BoolToVisibilityConverter x:Key="InvBoolToVis" Invert="True"/>
+        <core:BoolToColorBrushConverter x:Key="EnabledBrush">
+            <core:BoolToColorBrushConverter.TrueColor>
+                <SolidColorBrush Color="#16C080"/>
+            </core:BoolToColorBrushConverter.TrueColor>
+            <core:BoolToColorBrushConverter.FalseColor>
+                <SolidColorBrush Color="#4A5568"/>
+            </core:BoolToColorBrushConverter.FalseColor>
+        </core:BoolToColorBrushConverter>
+    </UserControl.Resources>
+
+    <DockPanel>
+        <!-- Header -->
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="20,14">
+            <Grid>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="SCHEDULER"
+                               FontSize="10" FontWeight="Bold"
+                               Foreground="{DynamicResource SubtleTextBrush}"/>
+                    <TextBlock Text="Automate timed command delivery"
+                               FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryTextBrush}"
+                               Margin="0,2,0,0"/>
+                </StackPanel>
+                <StackPanel HorizontalAlignment="Right"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                    <Button Content="{Binding SchedulerButtonLabel}"
+                            Style="{StaticResource SecondaryButton}"
+                            Command="{Binding ToggleSchedulerCommand}"
+                            Margin="0,0,8,0"/>
+                    <Button Content="＋  Add Rule"
+                            Style="{StaticResource PrimaryButton}"
+                            Command="{Binding AddRuleCommand}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Status bar -->
+        <Border DockPanel.Dock="Bottom"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="20,6">
+            <TextBlock Text="{Binding StatusMessage}"
+                       FontSize="11"
+                       Foreground="{DynamicResource SecondaryTextBrush}"/>
+        </Border>
+
+        <!-- Rules list -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      Padding="20,14">
+            <StackPanel>
+
+            <TextBlock Text="No scheduled rules yet. Click ＋ Add Rule to create one."
+                       Foreground="{DynamicResource PlaceholderBrush}"
+                       FontSize="13" TextAlignment="Center"
+                       HorizontalAlignment="Center"
+                       Margin="0,60,0,0"
+                       Visibility="{Binding Rules.Count, Converter={StaticResource InvBoolToVis}}"/>
+
+            <ItemsControl ItemsSource="{Binding Rules}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Style="{StaticResource Card}"
+                                Margin="0,0,0,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="14"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Enabled indicator -->
+                                <Border Grid.Column="0"
+                                        Width="4"
+                                        CornerRadius="2"
+                                        Background="{Binding IsEnabled, Converter={StaticResource EnabledBrush}}"
+                                        Margin="0,0,0,0"/>
+
+                                <!-- Rule details -->
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding RuleName}"
+                                               FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource PrimaryTextBrush}"/>
+                                    <TextBlock Margin="0,4,0,0"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource SecondaryTextBrush}">
+                                        <Run Text="{Binding ScheduleTime, Mode=OneWay}"
+                                             Foreground="{DynamicResource AccentTextBrush}"
+                                             FontWeight="SemiBold"/>
+                                        <Run Text="  ·  "/>
+                                        <Run Text="{Binding Recurrence, Mode=OneWay}"/>
+                                        <Run Text="  →  "/>
+                                        <Run Text="{Binding CommandName, Mode=OneWay}"/>
+                                        <Run Text="  →  "/>
+                                        <Run Text="{Binding TargetName, Mode=OneWay}"/>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding LastRunDisplay}"
+                                               FontSize="10" Margin="0,3,0,0"
+                                               Foreground="{DynamicResource SubtleTextBrush}"/>
+                                </StackPanel>
+
+                                <!-- Actions -->
+                                <StackPanel Grid.Column="3"
+                                            Orientation="Horizontal"
+                                            VerticalAlignment="Center">
+                                    <Button Content="&#9654;"
+                                            Style="{StaticResource IconButton}"
+                                            ToolTip="Run now"
+                                            Margin="0,0,4,0"
+                                            Command="{Binding DataContext.RunNowCommand,
+                                                RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"/>
+                                    <Button Style="{StaticResource IconButton}"
+                                            ToolTip="Enable / Disable"
+                                            FontSize="12"
+                                            Margin="0,0,4,0"
+                                            Command="{Binding DataContext.ToggleRuleCommand,
+                                                RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}">
+                                        <Button.Content>
+                                            <TextBlock FontSize="11"
+                                                       Foreground="{Binding IsEnabled,
+                                                           Converter={StaticResource EnabledBrush}}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Text" Value="○"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsEnabled}" Value="True">
+                                                                <Setter Property="Text" Value="●"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Button.Content>
+                                    </Button>
+                                    <Button Content="✏"
+                                            Style="{StaticResource IconButton}"
+                                            ToolTip="Edit rule"
+                                            Command="{Binding DataContext.EditRuleCommand,
+                                                RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"/>
+                                    <Button Content="✕"
+                                            Style="{StaticResource IconButton}"
+                                            ToolTip="Delete rule"
+                                            Foreground="{DynamicResource ErrorBrush}"
+                                            Command="{Binding DataContext.DeleteRuleCommand,
+                                                RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

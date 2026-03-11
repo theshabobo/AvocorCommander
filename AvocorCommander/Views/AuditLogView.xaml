@@ -1,0 +1,95 @@
+<UserControl x:Class="AvocorCommander.Views.AuditLogView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:core="clr-namespace:AvocorCommander.Core">
+
+    <UserControl.Resources>
+        <core:HexColorToBrushConverter x:Key="HexBrush"/>
+    </UserControl.Resources>
+
+    <DockPanel>
+        <!-- Header -->
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="20,14">
+            <Grid>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="AUDIT LOG"
+                               FontSize="10" FontWeight="Bold"
+                               Foreground="{DynamicResource SubtleTextBrush}"/>
+                    <TextBlock Text="Full command history with timestamps"
+                               FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryTextBrush}"
+                               Margin="0,2,0,0"/>
+                </StackPanel>
+                <StackPanel HorizontalAlignment="Right"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                    <!-- Filter box -->
+                    <TextBlock Text="Filter:"
+                               FontSize="11"
+                               Foreground="{DynamicResource LabelBrush}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,6,0"/>
+                    <TextBox Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
+                             Width="200" Height="30"
+                             FontSize="12"
+                             VerticalContentAlignment="Center"
+                             Margin="0,0,10,0"/>
+
+                    <Button Content="↺  Refresh"
+                            Style="{StaticResource SecondaryButton}"
+                            Command="{Binding RefreshCommand}"
+                            Margin="8,0,8,0"/>
+                    <Button Content="Export"
+                            Style="{StaticResource SecondaryButton}"
+                            Command="{Binding ExportCommand}"
+                            Margin="0,0,8,0"/>
+                    <Button Content="Clear Log"
+                            Style="{StaticResource DangerButton}"
+                            Command="{Binding ClearCommand}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Status bar -->
+        <Border DockPanel.Dock="Bottom"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="20,6">
+            <TextBlock Text="{Binding StatusMessage}"
+                       FontSize="11"
+                       Foreground="{DynamicResource SecondaryTextBrush}"/>
+        </Border>
+
+        <!-- Log DataGrid -->
+        <DataGrid ItemsSource="{Binding FilteredEntries}"
+                  Margin="0"
+                  FontFamily="Consolas"
+                  FontSize="12"
+                  core:AutoScrollBehavior.Enabled="True">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Time"       Binding="{Binding TimeString}"     Width="80"/>
+                <DataGridTemplateColumn Header="OK" Width="40">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding DirectionSymbol}"
+                                       FontWeight="Bold"
+                                       Foreground="{Binding DirectionColor, Converter={StaticResource HexBrush}}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Device"     Binding="{Binding DeviceName}"     Width="150"/>
+                <DataGridTextColumn Header="Address"    Binding="{Binding DeviceAddress}"  Width="130"/>
+                <DataGridTextColumn Header="Command"    Binding="{Binding CommandName}"    Width="160"/>
+                <DataGridTextColumn Header="Code"       Binding="{Binding CommandCode}"    Width="180"/>
+                <DataGridTextColumn Header="Response"   Binding="{Binding Response}"       Width="*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

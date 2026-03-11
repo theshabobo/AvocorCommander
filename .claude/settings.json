@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/temp/CodedPrograms/**)",
+      "Bash(find /c/temp/CodedPrograms/AvocorCommander -name *.txt -o -name *.md -o -name *.doc* -o -name *.pdf)",
+      "Read(//c/temp/CodedPrograms/AvocorCommander/V3.0/**)",
+      "Bash(python seed_database.py)",
+      "Bash(python3 \"c:/temp/CodedPrograms/AvocorCommander/V3.0/AvocorCommander/seed_database.py\")",
+      "Bash(py \"c:/temp/CodedPrograms/AvocorCommander/V3.0/AvocorCommander/seed_database.py\")",
+      "Bash(where python.exe)",
+      "Bash(where python3.exe)",
+      "Bash(ls /c/Python*/python.exe)",
+      "Read(//c/Users/LocalAdmin/AppData/Local/Programs/**)",
+      "Read(//c/ProgramData/miniconda3/**)",
+      "Bash(ls /c/Python*)",
+      "Read(//c//**)",
+      "Read(//c/Users/LocalAdmin/**)",
+      "Read(//c/ProgramData/**)",
+      "Read(//c/Program Files/nodejs/**)",
+      "Bash(/c/temp/platform-tools/sqlite3 --version)",
+      "Bash(/c/temp/node/node seed_database.js)",
+      "Bash(/c/temp/platform-tools/sqlite3 AvocorCommander.db)",
+      "Bash(/c/temp/platform-tools/sqlite3 AvocorCommander.db \":*)",
+      "Bash(dotnet build:*)",
+      "Bash(/c/temp/platform-tools/sqlite3 \"c:/temp/CodedPrograms/AvocorCommander/V3.0/AvocorCommander/AvocorCommander.db\" \".schema StoredDevices\")",
+      "Bash(dotnet clean:*)",
+      "Bash(start \"\" \"c:/temp/CodedPrograms/AvocorCommander/V3.0/AvocorCommander/bin/Debug/net8.0-windows/AvocorCommander.exe\")",
+      "Bash(find C:/temp/CodedPrograms/AvocorCommander/V1.0 -name *.cs)",
+      "Bash(start \"\" \"bin/Debug/net8.0-windows/AvocorCommander.exe\")",
+      "Bash(\"c:/temp/CodedPrograms/AvocorCommander/V3.0/AvocorCommander/Views/MacroView.xaml\":*)",
+      "Bash(dotnet publish:*)"
+    ],
+    "additionalDirectories": [
+      "c:\\temp\\CodedPrograms\\AvocorCommander\\V2.0\\AvocorCommanderV2.0",
+      "C:\\Users\\LocalAdmin\\.claude\\projects\\c--temp-CodedPrograms-AvocorCommander-V3-0"
+    ]
+  }
+}

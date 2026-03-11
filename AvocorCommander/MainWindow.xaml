@@ -1,0 +1,262 @@
+<Window x:Class="AvocorCommander.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:AvocorCommander.ViewModels"
+        xmlns:views="clr-namespace:AvocorCommander.Views"
+        xmlns:core="clr-namespace:AvocorCommander.Core"
+        Title="Avocor Commander  V3.0"
+        Width="1200" Height="760"
+        MinWidth="900" MinHeight="580"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource AppBgBrush}"
+        Loaded="Window_Loaded"
+        Closing="Window_Closing">
+
+    <Window.Resources>
+        <!-- Map each section ViewModel to its View UserControl -->
+        <DataTemplate DataType="{x:Type vm:DevicesViewModel}">
+            <views:DevicesView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ControlViewModel}">
+            <views:ControlView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:StatusViewModel}">
+            <views:StatusView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:SchedulerViewModel}">
+            <views:SchedulerView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:AuditLogViewModel}">
+            <views:AuditLogView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:MacroViewModel}">
+            <views:MacroView/>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type vm:DatabaseViewModel}">
+            <views:DatabaseView/>
+        </DataTemplate>
+
+        <core:EqualsToBoolConverter     x:Key="EqBool"/>
+        <core:BoolToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="200" MinWidth="180" MaxWidth="240"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ════════════════════════════════════════════════════════════════════
+             LEFT SIDEBAR
+             ════════════════════════════════════════════════════════════════════ -->
+        <Border Grid.Column="0"
+                Background="{DynamicResource SidebarBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,0,1,0">
+            <DockPanel>
+
+                <!-- App header -->
+                <Border DockPanel.Dock="Top"
+                        Background="{DynamicResource SidebarHeaderBrush}"
+                        Padding="18,16">
+                    <StackPanel>
+                        <TextBlock Text="{Binding AppTitle}"
+                                   Foreground="White"
+                                   FontSize="13" FontWeight="Bold"/>
+                        <TextBlock Foreground="#3A5878" FontSize="10" Margin="0,3,0,0">
+                            <Run Text="Display Control  ·  "/>
+                            <Run Text="{Binding AppVersion, Mode=OneWay}"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- Nav section label -->
+                <TextBlock DockPanel.Dock="Top"
+                           Text="SECTIONS"
+                           FontSize="9" FontWeight="Bold"
+                           Foreground="{DynamicResource SubtleTextBrush}"
+                           Margin="18,16,0,4"/>
+
+                <!-- Nav items -->
+                <StackPanel DockPanel.Dock="Top">
+
+                    <Button Command="{Binding NavDevicesCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentSection}" Value="Devices">
+                                        <Setter Property="Background"  Value="{DynamicResource NavActiveBackBrush}"/>
+                                        <Setter Property="Foreground"  Value="{DynamicResource NavActiveForeBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="⬡" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Devices" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Command="{Binding NavControlCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentSection}" Value="Control">
+                                        <Setter Property="Background"  Value="{DynamicResource NavActiveBackBrush}"/>
+                                        <Setter Property="Foreground"  Value="{DynamicResource NavActiveForeBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="▶" FontSize="12" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Control" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Command="{Binding NavStatusCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentSection}" Value="Status">
+                                        <Setter Property="Background"  Value="{DynamicResource NavActiveBackBrush}"/>
+                                        <Setter Property="Foreground"  Value="{DynamicResource NavActiveForeBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="◉" FontSize="12" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Live Status" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Command="{Binding NavSchedulerCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentSection}" Value="Scheduler">
+                                        <Setter Property="Background"  Value="{DynamicResource NavActiveBackBrush}"/>
+                                        <Setter Property="Foreground"  Value="{DynamicResource NavActiveForeBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="⏱" FontSize="12" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Scheduler" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Command="{Binding NavAuditLogCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentSection}" Value="AuditLog">
+                                        <Setter Property="Background"  Value="{DynamicResource NavActiveBackBrush}"/>
+                                        <Setter Property="Foreground"  Value="{DynamicResource NavActiveForeBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="☰" FontSize="12" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Audit Log" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Macros -->
+                    <Button Command="{Binding NavMacroCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentSection}" Value="Macros">
+                                        <Setter Property="Background"  Value="{DynamicResource NavActiveBackBrush}"/>
+                                        <Setter Property="Foreground"  Value="{DynamicResource NavActiveForeBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#9636;" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Macros" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Divider before Database -->
+                    <Separator Margin="16,8"/>
+
+                    <Button Command="{Binding NavDatabaseCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentSection}" Value="Database">
+                                        <Setter Property="Background"  Value="{DynamicResource NavActiveBackBrush}"/>
+                                        <Setter Property="Foreground"  Value="{DynamicResource NavActiveForeBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="⚙" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Database" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                </StackPanel>
+
+                <!-- Bottom: update check -->
+                <Border DockPanel.Dock="Bottom"
+                        Background="{DynamicResource SidebarBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="0,1,0,0"
+                        Padding="12,10">
+                    <StackPanel>
+                        <Button Content="&#8635;  Check for Updates"
+                                Style="{StaticResource SecondaryButton}"
+                                Command="{Binding CheckForUpdatesCommand}"
+                                HorizontalAlignment="Stretch"
+                                Padding="0,6" FontSize="11"/>
+                        <TextBlock Text="{Binding UpdateStatus}"
+                                   FontSize="10" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource SubtleTextBrush}"
+                                   Margin="2,5,2,0"/>
+                        <ProgressBar Value="{Binding DownloadProgress}" Maximum="100"
+                                     Height="3" Margin="0,4,0,0"
+                                     Visibility="{Binding IsUpdating,
+                                         Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Bottom: global status -->
+                <Border DockPanel.Dock="Bottom"
+                        BorderBrush="{DynamicResource DividerBrush}"
+                        BorderThickness="0,1,0,0"
+                        Padding="16,10">
+                    <TextBlock Text="{Binding GlobalStatus}"
+                               FontSize="10"
+                               Foreground="{DynamicResource SubtleTextBrush}"
+                               TextWrapping="Wrap"/>
+                </Border>
+
+                <!-- Spacer -->
+                <Border/>
+            </DockPanel>
+        </Border>
+
+        <!-- ════════════════════════════════════════════════════════════════════
+             MAIN CONTENT — DataTemplate auto-selects the View
+             ════════════════════════════════════════════════════════════════════ -->
+        <ContentControl Grid.Column="1"
+                        Content="{Binding CurrentViewModel}"
+                        Focusable="False"/>
+    </Grid>
+</Window>

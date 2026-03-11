@@ -1,0 +1,105 @@
+<Window x:Class="AvocorCommander.Dialogs.AddEditMacroDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Add / Edit Macro"
+        Width="560" Height="520"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="{DynamicResource AppBgBrush}"
+        Foreground="{DynamicResource PrimaryTextBrush}">
+
+    <Border Padding="24">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="12"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="12"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="8"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="12"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="14"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Text="MACRO" FontSize="10" FontWeight="Bold"
+                       Foreground="{DynamicResource SubtleTextBrush}"/>
+
+            <!-- Name -->
+            <StackPanel Grid.Row="2">
+                <TextBlock Text="Macro Name" Style="{StaticResource FieldLabel}"/>
+                <TextBox x:Name="TxtName" Margin="0,0,0,10"/>
+                <TextBlock Text="Notes (optional)" Style="{StaticResource FieldLabel}"/>
+                <TextBox x:Name="TxtNotes"/>
+            </StackPanel>
+
+            <!-- Steps header -->
+            <Grid Grid.Row="4">
+                <TextBlock Text="Steps" FontSize="12" FontWeight="SemiBold"
+                           Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center"/>
+                <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                    <Button Content="&#8593;" Style="{StaticResource SecondaryButton}" Padding="8,4"
+                            ToolTip="Move up" Click="MoveUp_Click" Margin="0,0,4,0"/>
+                    <Button Content="&#8595;" Style="{StaticResource SecondaryButton}" Padding="8,4"
+                            ToolTip="Move down" Click="MoveDown_Click" Margin="0,0,8,0"/>
+                    <Button Content="&#65291; Add Step" Style="{StaticResource PrimaryButton}"
+                            Padding="10,4" Click="AddStep_Click" Margin="0,0,6,0"/>
+                    <Button Content="Remove" Style="{StaticResource DangerButton}"
+                            Padding="10,4" Click="RemoveStep_Click"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- Steps list -->
+            <DataGrid Grid.Row="6"
+                      x:Name="StepGrid"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      SelectionMode="Single"
+                      FontFamily="Consolas" FontSize="12">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="#" Binding="{Binding StepOrder}" Width="35" IsReadOnly="True"/>
+                    <DataGridTemplateColumn Header="Series" Width="110">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <ComboBox ItemsSource="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=AllSeries}"
+                                          SelectedItem="{Binding Series, UpdateSourceTrigger=PropertyChanged}"
+                                          Margin="2,1"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="Command" Width="*">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <ComboBox ItemsSource="{Binding Commands}"
+                                          SelectedItem="{Binding SelectedCommand, UpdateSourceTrigger=PropertyChanged}"
+                                          DisplayMemberPath="CommandName"
+                                          Margin="2,1"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="Delay (ms)" Width="90">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBox Text="{Binding DelayMs, UpdateSourceTrigger=PropertyChanged}"
+                                         Margin="2,1"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <Separator Grid.Row="8"/>
+
+            <!-- Buttons -->
+            <StackPanel Grid.Row="10" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Cancel" Style="{StaticResource SecondaryButton}"
+                        IsCancel="True" Margin="0,0,10,0" Click="Cancel_Click"/>
+                <Button Content="Save Macro" Style="{StaticResource PrimaryButton}"
+                        IsDefault="True" Click="Save_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

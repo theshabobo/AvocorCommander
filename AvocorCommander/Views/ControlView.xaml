@@ -1,0 +1,337 @@
+<UserControl x:Class="AvocorCommander.Views.ControlView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:core="clr-namespace:AvocorCommander.Core">
+
+    <UserControl.Resources>
+        <core:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <core:BoolToVisibilityConverter x:Key="InvBoolToVis" Invert="True"/>
+        <core:NullToVisibilityConverter x:Key="NullToVis"/>
+        <core:HexColorToBrushConverter  x:Key="HexBrush"/>
+    </UserControl.Resources>
+
+    <DockPanel>
+
+        <!-- ── Header ─────────────────────────────────────────────────────── -->
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="20,14">
+            <StackPanel>
+                <TextBlock Text="COMMAND CONTROL"
+                           FontSize="10" FontWeight="Bold"
+                           Foreground="{DynamicResource SubtleTextBrush}"/>
+                <TextBlock Text="Send commands to one or more displays"
+                           FontSize="13" FontWeight="SemiBold"
+                           Foreground="{DynamicResource PrimaryTextBrush}"
+                           Margin="0,2,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- ── Status bar ─────────────────────────────────────────────────── -->
+        <Border DockPanel.Dock="Bottom"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="20,6">
+            <TextBlock Text="{Binding StatusMessage}"
+                       FontSize="11"
+                       Foreground="{DynamicResource SecondaryTextBrush}"/>
+        </Border>
+
+        <!-- ── Main content ───────────────────────────────────────────────── -->
+        <Grid Margin="20,16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="16"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- ── Command panel card ──────────────────────────────────────── -->
+            <Border Grid.Row="0" Style="{StaticResource Card}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="14"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="12"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="12"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="12"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="12"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Send Target -->
+                    <Grid Grid.Row="0">
+                        <TextBlock Text="SEND COMMAND"
+                                   FontSize="10" FontWeight="Bold"
+                                   Foreground="{DynamicResource SubtleTextBrush}"
+                                   VerticalAlignment="Center"/>
+                        <StackPanel HorizontalAlignment="Right"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center">
+                            <TextBlock Text="Target:"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource LabelBrush}"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,10,0"/>
+                            <RadioButton Content="Device"
+                                         IsChecked="{Binding TargetDevice}"
+                                         VerticalContentAlignment="Center"/>
+                            <RadioButton Content="Group"
+                                         IsChecked="{Binding TargetGroup}"
+                                         VerticalContentAlignment="Center"/>
+                            <RadioButton Content="All Connected"
+                                         IsChecked="{Binding TargetAll}"
+                                         VerticalContentAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Device / Group selector -->
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Device" Style="{StaticResource FieldLabel}"/>
+                            <ComboBox ItemsSource="{Binding AvailableDevices}"
+                                      SelectedItem="{Binding SelectedDevice}"
+                                      DisplayMemberPath="DeviceName"
+                                      IsEnabled="{Binding TargetDevice}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="Group" Style="{StaticResource FieldLabel}"/>
+                            <ComboBox ItemsSource="{Binding AvailableGroups}"
+                                      SelectedItem="{Binding SelectedGroup}"
+                                      DisplayMemberPath="GroupName"
+                                      IsEnabled="{Binding TargetGroup}"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Category + Command -->
+                    <Grid Grid.Row="4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Category" Style="{StaticResource FieldLabel}"/>
+                            <ComboBox ItemsSource="{Binding AvailableCategories}"
+                                      SelectedItem="{Binding SelectedCategory}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="Command" Style="{StaticResource FieldLabel}"/>
+                            <ComboBox ItemsSource="{Binding AvailableCommands}"
+                                      SelectedItem="{Binding SelectedCommand}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,2">
+                                            <TextBlock Text="{Binding CommandName}" FontSize="12"/>
+                                            <TextBlock Text="{Binding Notes}"
+                                                       FontSize="10"
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       Visibility="{Binding Notes,
+                                                           Converter={StaticResource NullToVis}}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Info bar -->
+                    <Border Grid.Row="6"
+                            Background="{DynamicResource InfoBarBrush}"
+                            CornerRadius="5" Padding="12,8"
+                            Visibility="{Binding SelectedCommand, Converter={StaticResource NullToVis}}">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Variable bytes warning -->
+                                <Border HorizontalAlignment="Left"
+                                        Background="{DynamicResource WarnBgBrush}"
+                                        CornerRadius="4" Padding="8,3"
+                                        Visibility="{Binding HasVariableBytes, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="⚠  Variable bytes — edit raw code before sending"
+                                               FontSize="10"
+                                               Foreground="{DynamicResource WarnFgBrush}"/>
+                                </Border>
+
+                                <StackPanel Grid.Column="1"
+                                            Orientation="Horizontal"
+                                            VerticalAlignment="Center">
+                                    <TextBlock Text="Port: "
+                                               FontSize="10"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"/>
+                                    <TextBlock Text="{Binding SelectedCommand.Port}"
+                                               FontSize="10"
+                                               Foreground="{DynamicResource AccentTextBrush}"
+                                               Margin="0,0,12,0"/>
+                                    <TextBlock Text="{Binding SelectedCommand.CommandFormat}"
+                                               FontSize="10" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource AccentBrush}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Notes -->
+                            <TextBlock Text="{Binding SelectedCommand.Notes}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,6,0,0"
+                                       Visibility="{Binding SelectedCommand.Notes, Converter={StaticResource NullToVis}}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Raw command + Send -->
+                    <Grid Grid.Row="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="12"/>
+                            <ColumnDefinition Width="160"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Raw Command" Style="{StaticResource FieldLabel}"/>
+                            <TextBox Text="{Binding RawCode, UpdateSourceTrigger=PropertyChanged}"
+                                     FontFamily="Consolas" FontSize="13"
+                                     VerticalContentAlignment="Center"/>
+                        </StackPanel>
+
+                        <Button Grid.Column="2"
+                                Content="▶  Send Command"
+                                Style="{StaticResource PrimaryButton}"
+                                Command="{Binding SendCommand}"
+                                VerticalAlignment="Bottom"
+                                FontSize="13"/>
+                    </Grid>
+
+                    <!-- Wake on LAN -->
+                    <Border Grid.Row="10"
+                            Background="{DynamicResource InfoBarBrush}"
+                            CornerRadius="5" Padding="12,8">
+                        <Grid>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="WAKE ON LAN"
+                                           FontSize="10" FontWeight="Bold"
+                                           Foreground="{DynamicResource SubtleTextBrush}"/>
+                                <TextBlock FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Margin="0,2,0,0">
+                                    <Run Text="MAC:"/>
+                                    <Run Text="{Binding SelectedDevice.MacAddress, TargetNullValue='— no MAC stored —'}"
+                                         FontFamily="Consolas"
+                                         Foreground="{DynamicResource AccentTextBrush}"/>
+                                </TextBlock>
+                            </StackPanel>
+                            <Button HorizontalAlignment="Right"
+                                    Content="⚡  Wake Device"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding WakeOnLanCommand}"
+                                    VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- ── Session log ─────────────────────────────────────────────── -->
+            <Border Grid.Row="2"
+                    Background="{DynamicResource LogBgBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+
+                <DockPanel>
+                    <!-- Log header -->
+                    <Border DockPanel.Dock="Top"
+                            Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="0,0,0,1"
+                            CornerRadius="8,8,0,0"
+                            Padding="14,7">
+                        <Grid>
+                            <TextBlock Text="SESSION LOG"
+                                       FontSize="10" FontWeight="Bold"
+                                       Foreground="{DynamicResource SubtleTextBrush}"
+                                       VerticalAlignment="Center"/>
+                            <StackPanel HorizontalAlignment="Right"
+                                        Orientation="Horizontal">
+                                <Button Content="Export"
+                                        Style="{StaticResource IconButton}"
+                                        FontSize="11"
+                                        Margin="0,0,8,0"
+                                        Command="{Binding ExportLogCommand}"/>
+                                <Button Content="Clear"
+                                        Style="{StaticResource IconButton}"
+                                        FontSize="11"
+                                        Command="{Binding ClearLogCommand}"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Log entries -->
+                    <ListView ItemsSource="{Binding SessionLog}"
+                              Background="Transparent"
+                              BorderThickness="0"
+                              Padding="12,4"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              core:AutoScrollBehavior.Enabled="True">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="Padding"          Value="0"/>
+                                <Setter Property="Margin"           Value="0"/>
+                                <Setter Property="Background"       Value="Transparent"/>
+                                <Setter Property="BorderThickness"  Value="0"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,3">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="68"/>
+                                        <ColumnDefinition Width="16"/>
+                                        <ColumnDefinition Width="160"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding TimeString}"
+                                               FontFamily="Consolas" FontSize="11"
+                                               Foreground="{DynamicResource SubtleTextBrush}"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding DirectionSymbol}"
+                                               FontFamily="Consolas" FontSize="12" FontWeight="Bold"
+                                               Foreground="{Binding DirectionColor, Converter={StaticResource HexBrush}}"
+                                               HorizontalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding DeviceName}"
+                                               FontFamily="Consolas" FontSize="11"
+                                               Foreground="{DynamicResource AccentTextBrush}"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Grid.Column="3"
+                                               Text="{Binding CommandName}"
+                                               FontFamily="Consolas" FontSize="11"
+                                               Foreground="{Binding DirectionColor, Converter={StaticResource HexBrush}}"
+                                               TextWrapping="Wrap"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</UserControl>

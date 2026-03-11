@@ -1,0 +1,104 @@
+<Window x:Class="AvocorCommander.Dialogs.AddEditRuleDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Add / Edit Schedule Rule"
+        Width="460" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="{DynamicResource AppBgBrush}"
+        Foreground="{DynamicResource PrimaryTextBrush}">
+
+    <Border Padding="24">
+        <StackPanel>
+            <TextBlock Text="SCHEDULE RULE"
+                       FontSize="10" FontWeight="Bold"
+                       Foreground="{DynamicResource SubtleTextBrush}"
+                       Margin="0,0,0,16"/>
+
+            <!-- Rule name -->
+            <TextBlock Text="Rule Name" Style="{StaticResource FieldLabel}"/>
+            <TextBox x:Name="TxtRuleName" Margin="0,0,0,12"/>
+
+            <!-- Target type -->
+            <TextBlock Text="Target" Style="{StaticResource FieldLabel}"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                <RadioButton x:Name="RdoDevice" Content="Specific Device" IsChecked="True"
+                             Checked="TargetType_Changed" Margin="0,0,16,0"/>
+                <RadioButton x:Name="RdoGroup"  Content="Group"
+                             Checked="TargetType_Changed"/>
+            </StackPanel>
+
+            <ComboBox x:Name="CmbDevice"
+                      DisplayMemberPath="DeviceName"
+                      Margin="0,0,0,12"
+                      SelectionChanged="CmbDevice_SelectionChanged"/>
+            <ComboBox x:Name="CmbGroup"
+                      DisplayMemberPath="GroupName"
+                      Visibility="Collapsed"
+                      Margin="0,0,0,12"/>
+
+            <!-- Command selection -->
+            <Grid Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="Series / Model" Style="{StaticResource FieldLabel}"/>
+                    <ComboBox x:Name="CmbSeries"
+                              SelectionChanged="CmbSeries_SelectionChanged"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="Command" Style="{StaticResource FieldLabel}"/>
+                    <ComboBox x:Name="CmbCommand"
+                              DisplayMemberPath="CommandName"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- Schedule time + recurrence -->
+            <Grid Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="Time (HH:mm)" Style="{StaticResource FieldLabel}"/>
+                    <TextBox x:Name="TxtTime" Text="08:00" FontFamily="Consolas"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="Recurrence" Style="{StaticResource FieldLabel}"/>
+                    <ComboBox x:Name="CmbRecurrence" SelectedIndex="0">
+                        <ComboBoxItem Content="Daily"/>
+                        <ComboBoxItem Content="Weekdays"/>
+                        <ComboBoxItem Content="Weekends"/>
+                        <ComboBoxItem Content="Once"/>
+                    </ComboBox>
+                </StackPanel>
+            </Grid>
+
+            <!-- Enabled -->
+            <CheckBox x:Name="ChkEnabled"
+                      Content="Rule Enabled"
+                      IsChecked="True"
+                      Margin="0,0,0,12"/>
+
+            <!-- Notes -->
+            <TextBlock Text="Notes (optional)" Style="{StaticResource FieldLabel}"/>
+            <TextBox x:Name="TxtNotes" Margin="0,0,0,20"/>
+
+            <Separator Margin="0,0,0,14"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Cancel"
+                        Style="{StaticResource SecondaryButton}"
+                        IsCancel="True" Margin="0,0,10,0"
+                        Click="Cancel_Click"/>
+                <Button Content="Save Rule"
+                        Style="{StaticResource PrimaryButton}"
+                        IsDefault="True"
+                        Click="Save_Click"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>

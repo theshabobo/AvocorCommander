@@ -1,0 +1,20 @@
+# Build output
+bin/
+obj/
+
+# Publish output (don't commit the 157MB exe)
+Publish/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

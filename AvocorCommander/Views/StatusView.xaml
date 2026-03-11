@@ -1,0 +1,165 @@
+<UserControl x:Class="AvocorCommander.Views.StatusView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:core="clr-namespace:AvocorCommander.Core">
+
+    <UserControl.Resources>
+        <core:HexColorToBrushConverter x:Key="HexBrush"/>
+        <core:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <core:BoolToVisibilityConverter x:Key="InvBoolToVis" Invert="True"/>
+    </UserControl.Resources>
+
+    <DockPanel>
+        <!-- Header -->
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="20,14">
+            <Grid>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="LIVE STATUS"
+                               FontSize="10" FontWeight="Bold"
+                               Foreground="{DynamicResource SubtleTextBrush}"/>
+                    <TextBlock Text="Real-time device connectivity monitor"
+                               FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryTextBrush}"
+                               Margin="0,2,0,0"/>
+                </StackPanel>
+                <StackPanel HorizontalAlignment="Right"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                    <!-- Online count badge -->
+                    <Border Background="{DynamicResource InfoBarBrush}"
+                            CornerRadius="4" Padding="10,5"
+                            Margin="0,0,12,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="7" Height="7"
+                                     Fill="{DynamicResource SuccessBrush}"
+                                     VerticalAlignment="Center"
+                                     Margin="0,0,6,0"/>
+                            <TextBlock FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}">
+                                <Run Text="{Binding OnlineCount, Mode=OneWay}"/>
+                                <Run Text=" online"/>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Poll interval -->
+                    <TextBlock Text="Poll interval (s):"
+                               FontSize="11"
+                               Foreground="{DynamicResource LabelBrush}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,6,0"/>
+                    <TextBox Text="{Binding PollIntervalSeconds, UpdateSourceTrigger=PropertyChanged}"
+                             Width="50" FontSize="12"
+                             VerticalContentAlignment="Center"
+                             Margin="0,0,10,0"/>
+
+                    <Button Content="{Binding PollButtonLabel}"
+                            Style="{StaticResource SecondaryButton}"
+                            Command="{Binding TogglePollingCommand}"
+                            Margin="0,0,8,0"/>
+                    <Button Content="↺  Refresh All"
+                            Style="{StaticResource PrimaryButton}"
+                            Command="{Binding RefreshAllCommand}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Status bar -->
+        <Border DockPanel.Dock="Bottom"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="20,6">
+            <TextBlock Text="{Binding StatusMessage}"
+                       FontSize="11"
+                       Foreground="{DynamicResource SecondaryTextBrush}"/>
+        </Border>
+
+        <!-- Device status cards -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Padding="16,12">
+            <StackPanel>
+
+            <TextBlock Text="No devices found. Add devices in the Devices section."
+                       Foreground="{DynamicResource PlaceholderBrush}"
+                       FontSize="13" TextAlignment="Center"
+                       HorizontalAlignment="Center"
+                       Margin="0,60,0,0"
+                       Visibility="{Binding DeviceStatuses.Count,
+                           Converter={StaticResource InvBoolToVis}}"/>
+
+            <ItemsControl ItemsSource="{Binding DeviceStatuses}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Width="220" Margin="0,0,12,12"
+                                Style="{StaticResource Card}">
+                            <StackPanel>
+                                <!-- Name + status dot -->
+                                <Grid>
+                                    <TextBlock Text="{Binding Device.DeviceName}"
+                                               FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource PrimaryTextBrush}"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center"/>
+                                    <Ellipse Width="10" Height="10"
+                                             Fill="{Binding StatusColor, Converter={StaticResource HexBrush}}"
+                                             HorizontalAlignment="Right"
+                                             VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <TextBlock Text="{Binding Device.ModelNumber}"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource AccentTextBrush}"
+                                           Margin="0,4,0,0"/>
+
+                                <TextBlock Text="{Binding Device.IPAddress}"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Margin="0,2,0,8"/>
+
+                                <!-- Status label + latency -->
+                                <Grid>
+                                    <Border CornerRadius="3" Padding="7,2"
+                                            HorizontalAlignment="Left">
+                                        <Border.Background>
+                                            <SolidColorBrush Color="#1A2236"/>
+                                        </Border.Background>
+                                        <TextBlock Text="{Binding StatusLabel}"
+                                                   FontSize="10" FontWeight="SemiBold"
+                                                   Foreground="{Binding StatusColor, Converter={StaticResource HexBrush}}"/>
+                                    </Border>
+                                    <StackPanel HorizontalAlignment="Right"
+                                                VerticalAlignment="Center"
+                                                Orientation="Horizontal"
+                                                Visibility="{Binding IsOnline, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="{Binding Latency}"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource SubtleTextBrush}"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Last seen -->
+                                <TextBlock Margin="0,6,0,0"
+                                           FontSize="10"
+                                           Foreground="{DynamicResource SubtleTextBrush}">
+                                    <Run Text="Last seen: "/>
+                                    <Run Text="{Binding LastSeen, Mode=OneWay}"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>
