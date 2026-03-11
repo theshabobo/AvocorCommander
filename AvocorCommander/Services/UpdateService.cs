@@ -29,6 +29,7 @@ public class UpdateInfo
 {
     public string Version    { get; set; } = "";
     public string AssetUrl   { get; set; } = "";
+    public string DbAssetUrl { get; set; } = "";   // empty = no db update in this release
     public string Notes      { get; set; } = "";
 }
 
@@ -112,35 +113,51 @@ public class UpdateService
         if (!Version.TryParse(tag, out var remote) || remote <= CurrentVersion)
             return null;
 
-        // Find the exe asset
-        var asset = release.Assets.FirstOrDefault(a =>
+        // Find the exe asset (required) and optional db asset
+        var exeAsset = release.Assets.FirstOrDefault(a =>
             a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
+        var dbAsset  = release.Assets.FirstOrDefault(a =>
+            a.Name.EndsWith(".db",  StringComparison.OrdinalIgnoreCase));
 
-        if (asset == null) return null;
+        if (exeAsset == null) return null;
 
         return new UpdateInfo
         {
-            Version  = tag,
-            AssetUrl = asset.Url,   // GitHub API URL — requires auth header to download
-            Notes    = release.Body,
+            Version     = tag,
+            AssetUrl    = exeAsset.Url,
+            DbAssetUrl  = dbAsset?.Url ?? "",
+            Notes       = release.Body,
         };
     }
 
-    /// <summary>Downloads the release asset and swaps the exe via a temp batch script.</summary>
+    /// <summary>Downloads the release assets and swaps the exe via a temp batch script.
+    /// If a db asset is present it is placed as AvocorCommander_update.db next to the
+    /// exe; DatabaseService will merge it on next startup.</summary>
     public async Task DownloadAndInstallAsync(UpdateInfo info, IProgress<int>? progress = null)
     {
-        var appDir  = AppContext.BaseDirectory;
-        var exePath = Path.Combine(appDir, "AvocorCommander.exe");
-        var tmpPath = Path.Combine(Path.GetTempPath(), "AvocorCommander_update.exe");
+        var appDir     = AppContext.BaseDirectory;
+        var exePath    = Path.Combine(appDir, "AvocorCommander.exe");
+        var tmpExePath = Path.Combine(Path.GetTempPath(), "AvocorCommander_update.exe");
+        var tmpDbPath  = Path.Combine(Path.GetTempPath(), "AvocorCommander_update.db");
+        var destDbPath = Path.Combine(appDir, "AvocorCommander_update.db");
 
-        await DownloadAssetAsync(info.AssetUrl, tmpPath, progress);
+        // Download exe (counts toward progress); db download is a bonus step
+        await DownloadAssetAsync(info.AssetUrl, tmpExePath, progress);
 
-        // Batch script: wait for this process to exit, swap exe, restart
-        var batPath = Path.Combine(Path.GetTempPath(), "avocor_update.bat");
+        if (!string.IsNullOrEmpty(info.DbAssetUrl))
+            await DownloadAssetAsync(info.DbAssetUrl, tmpDbPath, null);
+
+        // Batch script: wait for this process to exit, swap exe, drop db update file, restart
+        var batPath  = Path.Combine(Path.GetTempPath(), "avocor_update.bat");
+        var dbLine   = string.IsNullOrEmpty(info.DbAssetUrl)
+            ? ""
+            : $"move /y \"{tmpDbPath}\" \"{destDbPath}\"\r\n";
+
         File.WriteAllText(batPath,
             $"@echo off\r\n" +
             $"timeout /t 2 /nobreak >nul\r\n" +
-            $"move /y \"{tmpPath}\" \"{exePath}\"\r\n" +
+            $"move /y \"{tmpExePath}\" \"{exePath}\"\r\n" +
+            dbLine +
             $"start \"\" \"{exePath}\"\r\n" +
             $"del \"%~f0\"\r\n");
 

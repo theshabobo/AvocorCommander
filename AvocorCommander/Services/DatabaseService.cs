@@ -16,6 +16,7 @@ public sealed class DatabaseService : IDisposable
     {
         _dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AvocorCommander.db");
         EnsureSchema();
+        ApplyCommandDbUpdate();
     }
 
     // ── Connection factory ────────────────────────────────────────────────────
@@ -31,6 +32,42 @@ public sealed class DatabaseService : IDisposable
     }
 
     // ── Schema bootstrap ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// If a pending db update file exists (placed by the update batch script),
+    /// merges DeviceList and Models from it into the live database, then deletes it.
+    /// User data tables (Groups, ScheduleRules, Macros, etc.) are untouched.
+    /// </summary>
+    private void ApplyCommandDbUpdate()
+    {
+        var updatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AvocorCommander_update.db");
+        if (!File.Exists(updatePath)) return;
+
+        try
+        {
+            using var conn = OpenConnection();
+            using var cmd  = conn.CreateCommand();
+
+            // Attach the update db and replace DeviceList + Models atomically
+            cmd.CommandText = $"ATTACH DATABASE '{updatePath.Replace("'", "''")}' AS upd;";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = @"
+                BEGIN;
+                DELETE FROM DeviceList;
+                INSERT INTO DeviceList SELECT * FROM upd.DeviceList;
+                DELETE FROM Models;
+                INSERT INTO Models SELECT * FROM upd.Models;
+                COMMIT;
+                DETACH DATABASE upd;";
+            cmd.ExecuteNonQuery();
+        }
+        catch { /* swallow — stale/corrupt update file */ }
+        finally
+        {
+            try { File.Delete(updatePath); } catch { }
+        }
+    }
 
     private void EnsureSchema()
     {
