@@ -8,9 +8,9 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>AvocorCommander</AssemblyName>
     <RootNamespace>AvocorCommander</RootNamespace>
-    <Version>3.0.2</Version>
-    <AssemblyVersion>3.0.2.0</AssemblyVersion>
-    <FileVersion>3.0.2.0</FileVersion>
+    <Version>3.0.3</Version>
+    <AssemblyVersion>3.0.3.0</AssemblyVersion>
+    <FileVersion>3.0.3.0</FileVersion>
     <Product>Avocor Commander</Product>
     <Company>Avocor</Company>
     <!-- Single-file publish: bundle native DLLs and suppress .pdb -->
