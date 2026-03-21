@@ -21,11 +21,15 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
 
     public DevicesViewModel   DevicesVM   { get; }
     public ControlViewModel   ControlVM   { get; }
+    public RemoteViewModel    RemoteVM    { get; }
     public StatusViewModel    StatusVM    { get; }
     public SchedulerViewModel SchedulerVM { get; }
     public AuditLogViewModel  AuditLogVM  { get; }
     public DatabaseViewModel  DatabaseVM  { get; }
     public MacroViewModel     MacroVM     { get; }
+    public AboutViewModel     AboutVM     { get; }
+    public DashboardViewModel DashboardVM { get; }
+    public GroupsViewModel    GroupsVM    { get; }
 
     // ── Navigation ────────────────────────────────────────────────────────────
 
@@ -43,17 +47,39 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
 
     public ICommand NavDevicesCommand   { get; }
     public ICommand NavControlCommand   { get; }
+    public ICommand NavRemoteCommand    { get; }
     public ICommand NavStatusCommand    { get; }
     public ICommand NavSchedulerCommand { get; }
     public ICommand NavAuditLogCommand  { get; }
     public ICommand NavMacroCommand     { get; }
     public ICommand NavDatabaseCommand  { get; }
+    public ICommand NavAboutCommand     { get; }
+    public ICommand NavDashboardCommand { get; }
+    public ICommand NavGroupsCommand    { get; }
     public ICommand CheckForUpdatesCommand { get; }
+    public ICommand DismissBannerCommand   { get; }
 
     // ── Update ────────────────────────────────────────────────────────────────
 
     private readonly UpdateService _updateSvc = new();
     private UpdateInfo? _pendingUpdate;
+
+    private static readonly string _dismissedVersionPath =
+        System.IO.Path.Combine(AppContext.BaseDirectory, "dismissed_update.txt");
+    private string _dismissedVersion = LoadDismissedVersion();
+
+    private static string LoadDismissedVersion()
+    {
+        try { return System.IO.File.Exists(_dismissedVersionPath)
+                ? System.IO.File.ReadAllText(_dismissedVersionPath).Trim() : ""; }
+        catch { return ""; }
+    }
+
+    private static void SaveDismissedVersion(string version)
+    {
+        try { System.IO.File.WriteAllText(_dismissedVersionPath, version); }
+        catch { }
+    }
 
     private string _updateStatus = "";
     public string UpdateStatus
@@ -76,6 +102,23 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
         set => Set(ref _downloadProgress, value);
     }
 
+    // Banner + sidebar button state derived from _pendingUpdate
+    public bool   HasPendingUpdate   => _pendingUpdate != null;
+    public string PendingUpdateText  => _pendingUpdate != null
+        ? $"Version {_pendingUpdate.Version} is available — the app will restart automatically after install."
+        : "";
+    public string SidebarButtonLabel => _pendingUpdate != null
+        ? $"↓  Install v{_pendingUpdate.Version}"
+        : "↻  Check for Updates";
+
+    private void SetPendingUpdate(UpdateInfo? info)
+    {
+        _pendingUpdate = info;
+        OnPropertyChanged(nameof(HasPendingUpdate));
+        OnPropertyChanged(nameof(PendingUpdateText));
+        OnPropertyChanged(nameof(SidebarButtonLabel));
+    }
+
     // ── Title / version ───────────────────────────────────────────────────────
 
     public string AppTitle   => "AVOCOR COMMANDER";
@@ -85,11 +128,15 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
     {
         "Devices"   => DevicesVM,
         "Control"   => ControlVM,
+        "Remote"    => RemoteVM,
         "Status"    => StatusVM,
         "Scheduler" => SchedulerVM,
         "AuditLog"  => AuditLogVM,
         "Macros"    => MacroVM,
         "Database"  => DatabaseVM,
+        "About"     => AboutVM,
+        "Dashboard" => DashboardVM,
+        "Groups"    => GroupsVM,
         _           => DevicesVM,
     };
 
@@ -111,11 +158,15 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
 
         DevicesVM   = new DevicesViewModel(Database, Connections);
         ControlVM   = new ControlViewModel(Database, Connections);
+        RemoteVM    = new RemoteViewModel(Database, Connections);
         StatusVM    = new StatusViewModel(Database, Connections);
         SchedulerVM = new SchedulerViewModel(Database, Scheduler);
         AuditLogVM  = new AuditLogViewModel(Database);
         DatabaseVM  = new DatabaseViewModel(Database);
         MacroVM     = new MacroViewModel(Database, MacroRunner);
+        AboutVM     = new AboutViewModel();
+        DashboardVM = new DashboardViewModel(Database, Connections);
+        GroupsVM    = new GroupsViewModel(Database, Connections);
 
         // Scheduler + MacroRunner → AuditLog live feed
         Scheduler.EntryLogged   += (_, _) =>
@@ -123,52 +174,52 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
         MacroRunner.EntryLogged += (_, _) =>
             System.Windows.Application.Current?.Dispatcher.Invoke(AuditLogVM.AppendFromDb);
 
+        // DevicesVM history navigation
+        DevicesVM.ViewHistoryRequested += (_, deviceName) =>
+        {
+            AuditLogVM.FilterDevice = deviceName;
+            CurrentSection = "AuditLog";
+        };
+
         // Wire events from section VMs to dialogs (raised in MainWindow code-behind)
         NavDevicesCommand   = new RelayCommand(() => CurrentSection = "Devices");
         NavControlCommand   = new RelayCommand(() => CurrentSection = "Control");
+        NavRemoteCommand    = new RelayCommand(() => CurrentSection = "Remote");
         NavStatusCommand    = new RelayCommand(() => CurrentSection = "Status");
         NavSchedulerCommand = new RelayCommand(() => CurrentSection = "Scheduler");
         NavAuditLogCommand  = new RelayCommand(() => CurrentSection = "AuditLog");
         NavMacroCommand     = new RelayCommand(() => CurrentSection = "Macros");
         NavDatabaseCommand  = new RelayCommand(() => CurrentSection = "Database");
+        NavAboutCommand     = new RelayCommand(() => CurrentSection = "About");
+        NavDashboardCommand = new RelayCommand(() => CurrentSection = "Dashboard");
+        NavGroupsCommand    = new RelayCommand(() => CurrentSection = "Groups");
 
-        CheckForUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync,
-            () => !IsUpdating);
-
-        if (!_updateSvc.IsConfigured)
+        CheckForUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync, () => !IsUpdating);
+        DismissBannerCommand   = new RelayCommand(() =>
+        {
+            if (_pendingUpdate != null)
+            {
+                _dismissedVersion = _pendingUpdate.Version;
+                SaveDismissedVersion(_dismissedVersion);
+            }
+            SetPendingUpdate(null);
             UpdateStatus = "v" + UpdateService.CurrentVersion.ToString(3);
+        });
+
+        // Always show current version in sidebar; startup check will update if needed
+        UpdateStatus = "v" + UpdateService.CurrentVersion.ToString(3);
     }
 
+    /// <summary>
+    /// Sidebar button handler.
+    /// If an update is pending → confirm and install.
+    /// If not → run a manual check and show banner if found.
+    /// </summary>
     private async Task CheckForUpdatesAsync()
     {
         if (_pendingUpdate != null)
         {
-            // Second click = download
-            var confirm = MessageBox.Show(
-                $"Download and install v{_pendingUpdate.Version}?\n\n" +
-                $"{_pendingUpdate.Notes}\n\nThe app will restart automatically.",
-                "Install Update", MessageBoxButton.OKCancel, MessageBoxImage.Question);
-            if (confirm != MessageBoxResult.OK) return;
-
-            IsUpdating     = true;
-            UpdateStatus   = "Downloading…  0%";
-            DownloadProgress = 0;
-            var prog = new Progress<int>(p =>
-            {
-                DownloadProgress = p;
-                UpdateStatus     = $"Downloading…  {p}%";
-            });
-            try
-            {
-                await _updateSvc.DownloadAndInstallAsync(_pendingUpdate, prog);
-            }
-            catch (Exception ex)
-            {
-                IsUpdating   = false;
-                UpdateStatus = "Download failed.";
-                MessageBox.Show(ex.Message, "Update Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+            await InstallPendingUpdateAsync();
             return;
         }
 
@@ -176,19 +227,70 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
         UpdateStatus = "Checking…";
         try
         {
-            _pendingUpdate = await _updateSvc.CheckAsync();
-            if (_pendingUpdate != null)
-                UpdateStatus = $"v{_pendingUpdate.Version} available — click to install";
-            else
-                UpdateStatus = "Up to date  ✓";
+            var info = await _updateSvc.CheckAsync();
+            if (info?.Version == _dismissedVersion) info = null;
+            SetPendingUpdate(info);
+            UpdateStatus = info != null
+                ? $"v{info.Version} available"
+                : "Up to date  ✓";
         }
-        catch (Exception ex)
+        catch
         {
-            UpdateStatus = $"Check failed: {ex.Message}";
+            UpdateStatus = "Check failed";
         }
         finally
         {
             IsUpdating = false;
+        }
+    }
+
+    /// <summary>Silent background check on startup. Shows banner on find; updates status on failure.</summary>
+    private async Task RunStartupUpdateCheckAsync()
+    {
+        if (!_updateSvc.IsConfigured) return;
+        try
+        {
+            var info = await _updateSvc.CheckAsync();
+            if (info?.Version == _dismissedVersion) info = null;
+            SetPendingUpdate(info);
+            if (info != null)
+                UpdateStatus = $"v{info.Version} available";
+        }
+        catch
+        {
+            UpdateStatus = "Check failed";
+        }
+    }
+
+    /// <summary>Confirm dialog → download → install. Used by both the banner and sidebar button.</summary>
+    private async Task InstallPendingUpdateAsync()
+    {
+        if (_pendingUpdate == null) return;
+
+        var confirm = MessageBox.Show(
+            $"Download and install v{_pendingUpdate.Version}?\n\n" +
+            $"{_pendingUpdate.Notes}\n\nThe app will restart automatically.",
+            "Install Update", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.OK) return;
+
+        IsUpdating       = true;
+        DownloadProgress = 0;
+        UpdateStatus     = "Downloading…  0%";
+
+        var prog = new Progress<int>(p =>
+        {
+            DownloadProgress = p;
+            UpdateStatus     = $"Downloading…  {p}%";
+        });
+        try
+        {
+            await _updateSvc.DownloadAndInstallAsync(_pendingUpdate, prog);
+        }
+        catch (Exception ex)
+        {
+            IsUpdating   = false;
+            UpdateStatus = "Download failed.";
+            MessageBox.Show(ex.Message, "Update Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -197,6 +299,19 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
         DevicesVM.LoadDevices();
         DatabaseVM.Initialize();
         // Load other sections lazily when first navigated to
+
+        // Startup auto-connect
+        _ = StartupAutoConnectAsync();
+
+        // Kick off silent background update check — no await, intentionally fire-and-forget
+        _ = RunStartupUpdateCheckAsync();
+    }
+
+    private async Task StartupAutoConnectAsync()
+    {
+        var devices = Database.GetAutoConnectDevices();
+        foreach (var d in devices)
+            await Connections.ConnectAsync(d);
     }
 
     private void OnSectionChanged(string section)
@@ -205,6 +320,9 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
         {
             case "Control":
                 ControlVM.LoadData();
+                break;
+            case "Remote":
+                RemoteVM.LoadDevices();
                 break;
             case "Status":
                 StatusVM.LoadDevices();
@@ -221,12 +339,19 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
             case "Database":
                 DatabaseVM.Initialize();
                 break;
+            case "Dashboard":
+                DashboardVM.LoadData();
+                break;
+            case "Groups":
+                GroupsVM.LoadData();
+                break;
         }
         GlobalStatus = $"Section: {section}";
     }
 
     public void Dispose()
     {
+        DashboardVM.Dispose();
         StatusVM.Dispose();
         Scheduler.Dispose();
         Connections.Dispose();

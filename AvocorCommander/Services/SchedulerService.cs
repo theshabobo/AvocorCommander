@@ -60,6 +60,13 @@ public sealed class SchedulerService : IDisposable
         var dow     = now.DayOfWeek;
 
         var rules = _db.GetAllScheduleRules();
+
+        // Only hit the DB for commands/devices if at least one rule is due this minute
+        if (!rules.Any(r => r.IsEnabled && r.ScheduleTime == timeStr)) return;
+
+        var allCommands = _db.GetAllCommands();
+        var allDevices  = _db.GetAllDevices();
+
         foreach (var rule in rules)
         {
             if (!rule.IsEnabled)      continue;
@@ -84,16 +91,16 @@ public sealed class SchedulerService : IDisposable
             if (rule.Recurrence == "Once")
                 _firedToday.Add($"rule:{rule.Id}:once");
 
-            _ = FireRuleAsync(rule);
+            _ = FireRuleAsync(rule, allCommands, allDevices);
         }
     }
 
-    private async Task FireRuleAsync(ScheduleRule rule)
+    private async Task FireRuleAsync(ScheduleRule rule, List<CommandEntry> allCommands, List<DeviceEntry> allDevices)
     {
         try
         {
-            // Load the command
-            var cmd = _db.GetAllCommands().FirstOrDefault(c => c.Id == rule.CommandId);
+            // Resolve the command from the pre-loaded list
+            var cmd = allCommands.FirstOrDefault(c => c.Id == rule.CommandId);
             if (cmd == null)
             {
                 RuleFailed?.Invoke(this, $"{rule.RuleName}: command ID {rule.CommandId} not found");
@@ -108,7 +115,7 @@ public sealed class SchedulerService : IDisposable
             }
 
             // Collect target device IDs
-            var devices   = _db.GetAllDevices();
+            var devices = allDevices;
             var deviceIds = new List<int>();
             if (rule.DeviceId.HasValue)
             {
@@ -116,7 +123,7 @@ public sealed class SchedulerService : IDisposable
             }
             else if (rule.GroupId.HasValue)
             {
-                var group = _db.GetAllGroups().FirstOrDefault(g => g.Id == rule.GroupId.Value);
+                var group = _db.GetAllGroups().FirstOrDefault(g => g.Id == rule.GroupId.Value); // groups are small — no cache needed
                 if (group != null) deviceIds.AddRange(group.MemberDeviceIds);
             }
 
@@ -168,7 +175,8 @@ public sealed class SchedulerService : IDisposable
     }
 
     /// <summary>Immediately fires a rule on demand (ignores recurrence/time checks).</summary>
-    public Task RunRuleNowAsync(ScheduleRule rule) => FireRuleAsync(rule);
+    public Task RunRuleNowAsync(ScheduleRule rule) =>
+        FireRuleAsync(rule, _db.GetAllCommands(), _db.GetAllDevices());
 
     private void LogEntry(ScheduleRule rule, CommandEntry cmd, byte[] bytes,
                           DeviceEntry? device, int? did, string response, bool success)

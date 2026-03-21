@@ -1,7 +1,9 @@
 using AvocorCommander.Core;
 using AvocorCommander.Models;
 using AvocorCommander.Services;
+using Microsoft.Win32;
 using System.Collections.ObjectModel;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
 
@@ -47,11 +49,14 @@ public sealed class MacroViewModel : BaseViewModel
     public event EventHandler?             AddMacroRequested;
     public event EventHandler<MacroEntry>? EditMacroRequested;
 
-    public ICommand AddMacroCommand    { get; }
-    public ICommand EditMacroCommand   { get; }
-    public ICommand DeleteMacroCommand { get; }
-    public ICommand RunMacroCommand    { get; }
-    public ICommand RefreshCommand     { get; }
+    public ICommand AddMacroCommand       { get; }
+    public ICommand EditMacroCommand      { get; }
+    public ICommand DeleteMacroCommand    { get; }
+    public ICommand DuplicateMacroCommand { get; }
+    public ICommand ExportMacrosCommand   { get; }
+    public ICommand ImportMacrosCommand   { get; }
+    public ICommand RunMacroCommand       { get; }
+    public ICommand RefreshCommand        { get; }
 
     public MacroViewModel(DatabaseService db, MacroRunnerService runner)
     {
@@ -65,11 +70,14 @@ public sealed class MacroViewModel : BaseViewModel
         _runner.RunCompleted  += (_, _) =>
             Application.Current?.Dispatcher.Invoke(() => { StatusMessage = "Macro completed."; IsRunning = false; });
 
-        AddMacroCommand    = new RelayCommand(() => AddMacroRequested?.Invoke(this, EventArgs.Empty));
-        EditMacroCommand   = new RelayCommand<MacroEntry>(m => { if (m != null) EditMacroRequested?.Invoke(this, m); }, m => m != null);
-        DeleteMacroCommand = new RelayCommand<MacroEntry>(DeleteMacro, m => m != null);
-        RunMacroCommand    = new AsyncRelayCommand(RunMacroAsync, () => SelectedMacro != null && !IsRunning);
-        RefreshCommand     = new RelayCommand(LoadData);
+        AddMacroCommand       = new RelayCommand(() => AddMacroRequested?.Invoke(this, EventArgs.Empty));
+        EditMacroCommand      = new RelayCommand<MacroEntry>(m => { if (m != null) EditMacroRequested?.Invoke(this, m); }, m => m != null);
+        DeleteMacroCommand    = new RelayCommand<MacroEntry>(DeleteMacro, m => m != null);
+        DuplicateMacroCommand = new RelayCommand<MacroEntry>(DuplicateMacro, m => m != null);
+        ExportMacrosCommand   = new RelayCommand(ExportMacros);
+        ImportMacrosCommand   = new RelayCommand(ImportMacros);
+        RunMacroCommand       = new AsyncRelayCommand(RunMacroAsync, () => SelectedMacro != null && !IsRunning);
+        RefreshCommand        = new RelayCommand(LoadData);
     }
 
     public void LoadData()
@@ -130,6 +138,112 @@ public sealed class MacroViewModel : BaseViewModel
         Macros.Remove(macro);
         if (SelectedMacro == macro) SelectedMacro = null;
         StatusMessage = $"Deleted: {macro.MacroName}";
+    }
+
+    private void DuplicateMacro(MacroEntry? macro)
+    {
+        if (macro == null) return;
+        var copy = new MacroEntry
+        {
+            MacroName = $"{macro.MacroName} (Copy)",
+            Notes     = macro.Notes,
+            Steps     = macro.Steps.Select(s => new MacroStep
+            {
+                StepOrder     = s.StepOrder,
+                CommandId     = s.CommandId,
+                CommandName   = s.CommandName,
+                SeriesPattern = s.SeriesPattern,
+                DelayAfterMs  = s.DelayAfterMs,
+            }).ToList(),
+        };
+        AddMacro(copy);
+        StatusMessage = $"Duplicated: {macro.MacroName}";
+    }
+
+    private void ExportMacros()
+    {
+        var dlg = new SaveFileDialog
+        {
+            Title      = "Export Macros",
+            Filter     = "JSON (*.json)|*.json",
+            DefaultExt = ".json",
+            FileName   = $"Macros_{DateTime.Now:yyyyMMdd}",
+        };
+        if (dlg.ShowDialog() != true) return;
+        try
+        {
+            var records = Macros.Select(m => new
+            {
+                m.MacroName,
+                m.Notes,
+                Steps = m.Steps.Select(s => new
+                {
+                    s.StepOrder, s.CommandName, s.SeriesPattern, s.DelayAfterMs
+                }).ToList(),
+            });
+            var json = JsonSerializer.Serialize(records, new JsonSerializerOptions { WriteIndented = true });
+            System.IO.File.WriteAllText(dlg.FileName, json);
+            StatusMessage = $"Exported {Macros.Count} macro(s) to {System.IO.Path.GetFileName(dlg.FileName)}";
+        }
+        catch (Exception ex) { StatusMessage = $"Export failed: {ex.Message}"; }
+    }
+
+    private void ImportMacros()
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title  = "Import Macros",
+            Filter = "JSON (*.json)|*.json",
+        };
+        if (dlg.ShowDialog() != true) return;
+        try
+        {
+            var json    = System.IO.File.ReadAllText(dlg.FileName);
+            var records = JsonSerializer.Deserialize<List<JsonElement>>(json);
+            if (records == null) return;
+
+            var allCommands = _db.GetAllCommands();
+            int added = 0;
+
+            foreach (var r in records)
+            {
+                var name = r.TryGetProperty("MacroName", out var p) ? p.GetString() ?? "" : "";
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                if (Macros.Any(m => m.MacroName.Equals(name, StringComparison.OrdinalIgnoreCase))) continue;
+
+                var steps = new List<MacroStep>();
+                if (r.TryGetProperty("Steps", out var stepsEl))
+                {
+                    int order = 1;
+                    foreach (var se in stepsEl.EnumerateArray())
+                    {
+                        var cmdName = se.TryGetProperty("CommandName", out var cn) ? cn.GetString() ?? "" : "";
+                        var cmd     = allCommands.FirstOrDefault(c =>
+                            c.CommandName.Equals(cmdName, StringComparison.OrdinalIgnoreCase));
+                        if (cmd == null) continue;
+                        steps.Add(new MacroStep
+                        {
+                            StepOrder     = se.TryGetProperty("StepOrder",    out var so) ? so.GetInt32() : order,
+                            CommandId     = cmd.Id,
+                            CommandName   = cmd.CommandName,
+                            SeriesPattern = cmd.SeriesPattern,
+                            DelayAfterMs  = se.TryGetProperty("DelayAfterMs", out var d)  ? d.GetInt32()  : 0,
+                        });
+                        order++;
+                    }
+                }
+
+                AddMacro(new MacroEntry
+                {
+                    MacroName = name,
+                    Notes     = r.TryGetProperty("Notes", out var notes) ? notes.GetString() ?? "" : "",
+                    Steps     = steps,
+                });
+                added++;
+            }
+            StatusMessage = $"Imported {added} new macro(s) from {System.IO.Path.GetFileName(dlg.FileName)}";
+        }
+        catch (Exception ex) { StatusMessage = $"Import failed: {ex.Message}"; }
     }
 
     private async Task RunMacroAsync()

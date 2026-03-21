@@ -63,7 +63,8 @@ public partial class NetworkScanDialog : Window
         _cts = new CancellationTokenSource();
 
         var ouiMap  = _db.GetOuiSeriesMap();
-        var models  = _db.GetDistinctModelNumbers();
+        var models  = _db.GetAllModels()
+            .ToDictionary(m => m.ModelNumber, m => m.SeriesPattern, StringComparer.OrdinalIgnoreCase);
 
         var progress = new Progress<(int done, int total)>(p =>
         {
@@ -78,7 +79,7 @@ public partial class NetworkScanDialog : Window
                 TxtStartIp.Text.Trim(),
                 TxtEndIp.Text.Trim(),
                 ouiMap,
-                models,
+                models,   // modelNumber → seriesPattern
                 result => Dispatcher.Invoke(() => _results.Add(result)),
                 progress,
                 _cts.Token);

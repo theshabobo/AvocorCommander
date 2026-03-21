@@ -25,7 +25,7 @@ public sealed class CommandEntry
 
         if (CommandFormat == "ASCII")
         {
-            return System.Text.Encoding.ASCII.GetBytes(code);
+            return System.Text.Encoding.ASCII.GetBytes(code + "\r");
         }
 
         // HEX format: "AA BB CC …"

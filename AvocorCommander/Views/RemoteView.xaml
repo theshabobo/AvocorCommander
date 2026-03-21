@@ -1,0 +1,366 @@
+<UserControl x:Class="AvocorCommander.Views.RemoteView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:core="clr-namespace:AvocorCommander.Core"
+             Background="{DynamicResource AppBgBrush}">
+
+    <UserControl.Resources>
+
+        <core:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <core:BoolToVisibilityConverter x:Key="InvBoolToVis" Invert="True"/>
+
+        <!-- ── Remote button style ──────────────────────────────────────────── -->
+        <!-- DataContext on each button is bound to a RemoteButtonState so the  -->
+        <!-- DataTriggers can reference FlashSuccess / FlashError directly.      -->
+        <Style x:Key="RemoteBtn" TargetType="Button">
+            <Setter Property="Background"      Value="#171C2A"/>
+            <Setter Property="Foreground"      Value="#EDF2F8"/>
+            <Setter Property="BorderBrush"     Value="#1E2A3E"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding"         Value="10,9"/>
+            <Setter Property="FontSize"        Value="12"/>
+            <Setter Property="Cursor"          Value="Hand"/>
+            <Setter Property="MinWidth"        Value="72"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#1D2A40"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#2E4868"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#0078D4"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.25"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                            <!-- Flash feedback — bound to DataContext (RemoteButtonState) -->
+                            <DataTrigger Binding="{Binding FlashSuccess}" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush"     Value="#16C080"/>
+                                <Setter TargetName="Bd" Property="BorderThickness" Value="2"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding FlashError}" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush"     Value="#E74C3C"/>
+                                <Setter TargetName="Bd" Property="BorderThickness" Value="2"/>
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Power button variant — distinct reddish tint -->
+        <Style x:Key="PowerBtn" TargetType="Button" BasedOn="{StaticResource RemoteBtn}">
+            <Setter Property="Background"  Value="#1E1218"/>
+            <Setter Property="BorderBrush" Value="#5A1A1A"/>
+            <Setter Property="FontSize"    Value="13"/>
+            <Setter Property="FontWeight"  Value="SemiBold"/>
+        </Style>
+
+        <!-- D-pad directional button — square-ish, slightly smaller text -->
+        <Style x:Key="DpadBtn" TargetType="Button" BasedOn="{StaticResource RemoteBtn}">
+            <Setter Property="Width"   Value="54"/>
+            <Setter Property="Height"  Value="46"/>
+            <Setter Property="Padding" Value="4"/>
+            <Setter Property="FontSize" Value="14"/>
+        </Style>
+
+        <!-- OK button — highlighted, larger -->
+        <Style x:Key="OkBtn" TargetType="Button" BasedOn="{StaticResource RemoteBtn}">
+            <Setter Property="Width"      Value="62"/>
+            <Setter Property="Height"     Value="46"/>
+            <Setter Property="Background" Value="#1A2236"/>
+            <Setter Property="BorderBrush" Value="#2E4868"/>
+            <Setter Property="FontSize"   Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>  <!-- Header / device picker -->
+            <RowDefinition Height="*"/>     <!-- Remote panel (scrollable) -->
+            <RowDefinition Height="Auto"/>  <!-- Status bar -->
+        </Grid.RowDefinitions>
+
+        <!-- ════════════════════════════════════════════════════════════════════
+             HEADER — device selector
+             ════════════════════════════════════════════════════════════════════ -->
+        <Border Grid.Row="0"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="24,14">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Left"
+                           Text="VIRTUAL REMOTE"
+                           FontSize="11" FontWeight="Bold"
+                           Foreground="{DynamicResource SubtleTextBrush}"
+                           VerticalAlignment="Center"
+                           Margin="0,0,24,0"/>
+
+                <TextBlock DockPanel.Dock="Left"
+                           Text="Device:"
+                           FontSize="13"
+                           Foreground="{DynamicResource SecondaryTextBrush}"
+                           VerticalAlignment="Center"
+                           Margin="0,0,10,0"/>
+
+                <ComboBox DockPanel.Dock="Left"
+                          Width="260"
+                          ItemsSource="{Binding ConnectedDevices}"
+                          SelectedItem="{Binding SelectedDevice}"
+                          DisplayMemberPath="DeviceName"
+                          FontSize="13"
+                          Visibility="{Binding HasConnectedDevices, Converter={StaticResource BoolToVis}}"/>
+
+                <TextBlock DockPanel.Dock="Left"
+                           Text="No devices connected — connect a device from the Devices section."
+                           FontSize="12"
+                           Foreground="{DynamicResource SubtleTextBrush}"
+                           VerticalAlignment="Center"
+                           Visibility="{Binding HasConnectedDevices, Converter={StaticResource InvBoolToVis}}"/>
+            </DockPanel>
+        </Border>
+
+        <!-- ════════════════════════════════════════════════════════════════════
+             REMOTE PANEL
+             ════════════════════════════════════════════════════════════════════ -->
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <Grid>
+                <!-- No-device overlay -->
+                <TextBlock Text="Select a connected device above to use the remote."
+                           FontSize="14"
+                           Foreground="{DynamicResource SubtleTextBrush}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Margin="0,60,0,0"
+                           Visibility="{Binding HasConnectedDevices, Converter={StaticResource InvBoolToVis}}"/>
+
+                <!-- Remote button panel — centered, fixed width -->
+                <Border Margin="0,32,0,32"
+                        HorizontalAlignment="Center"
+                        Background="{DynamicResource CardBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="28,26"
+                        Width="310"
+                        Visibility="{Binding HasConnectedDevices, Converter={StaticResource BoolToVis}}">
+
+                    <StackPanel>
+
+                        <!-- ── Power ──────────────────────────────────────── -->
+                        <Button DataContext="{Binding Power}"
+                                IsEnabled="{Binding IsAvailable}"
+                                Style="{StaticResource PowerBtn}"
+                                Command="{Binding DataContext.SendButtonCommand,
+                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="Power"
+                                HorizontalAlignment="Stretch"
+                                Margin="0,0,0,18">
+                            <TextBlock Text="⏻   Power" FontSize="13" FontWeight="SemiBold"/>
+                        </Button>
+
+                        <!-- ── Home + Source ──────────────────────────────── -->
+                        <Grid Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Button Grid.Column="0"
+                                    DataContext="{Binding Home}"
+                                    IsEnabled="{Binding IsAvailable}"
+                                    Style="{StaticResource RemoteBtn}"
+                                    Command="{Binding DataContext.SendButtonCommand,
+                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="Home"
+                                    HorizontalAlignment="Stretch">
+                                <TextBlock Text="⌂   Home"/>
+                            </Button>
+
+                            <Button Grid.Column="2"
+                                    DataContext="{Binding Source}"
+                                    IsEnabled="{Binding IsAvailable}"
+                                    Style="{StaticResource RemoteBtn}"
+                                    Command="{Binding DataContext.SendButtonCommand,
+                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="Source"
+                                    HorizontalAlignment="Stretch">
+                                <TextBlock Text="⎘   Source"/>
+                            </Button>
+                        </Grid>
+
+                        <!-- ── Separator ──────────────────────────────────── -->
+                        <Separator Background="{DynamicResource DividerBrush}"
+                                   Margin="0,2,0,14"/>
+
+                        <!-- ── D-Pad ──────────────────────────────────────── -->
+                        <Grid HorizontalAlignment="Center" Margin="0,0,0,14">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="6"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="6"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="6"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="6"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Up -->
+                            <Button Grid.Row="0" Grid.Column="2"
+                                    DataContext="{Binding Up}"
+                                    IsEnabled="{Binding IsAvailable}"
+                                    Style="{StaticResource DpadBtn}"
+                                    Command="{Binding DataContext.SendButtonCommand,
+                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="Up">
+                                <TextBlock Text="▲" FontSize="13"/>
+                            </Button>
+
+                            <!-- Left -->
+                            <Button Grid.Row="2" Grid.Column="0"
+                                    DataContext="{Binding Left}"
+                                    IsEnabled="{Binding IsAvailable}"
+                                    Style="{StaticResource DpadBtn}"
+                                    Command="{Binding DataContext.SendButtonCommand,
+                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="Left">
+                                <TextBlock Text="◄" FontSize="13"/>
+                            </Button>
+
+                            <!-- OK -->
+                            <Button Grid.Row="2" Grid.Column="2"
+                                    DataContext="{Binding Ok}"
+                                    IsEnabled="{Binding IsAvailable}"
+                                    Style="{StaticResource OkBtn}"
+                                    Command="{Binding DataContext.SendButtonCommand,
+                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="Ok">
+                                <TextBlock Text="OK" FontSize="12" FontWeight="SemiBold"/>
+                            </Button>
+
+                            <!-- Right -->
+                            <Button Grid.Row="2" Grid.Column="4"
+                                    DataContext="{Binding Right}"
+                                    IsEnabled="{Binding IsAvailable}"
+                                    Style="{StaticResource DpadBtn}"
+                                    Command="{Binding DataContext.SendButtonCommand,
+                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="Right">
+                                <TextBlock Text="►" FontSize="13"/>
+                            </Button>
+
+                            <!-- Down -->
+                            <Button Grid.Row="4" Grid.Column="2"
+                                    DataContext="{Binding Down}"
+                                    IsEnabled="{Binding IsAvailable}"
+                                    Style="{StaticResource DpadBtn}"
+                                    Command="{Binding DataContext.SendButtonCommand,
+                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="Down">
+                                <TextBlock Text="▼" FontSize="13"/>
+                            </Button>
+                        </Grid>
+
+                        <!-- ── Back ───────────────────────────────────────── -->
+                        <Button DataContext="{Binding Back}"
+                                IsEnabled="{Binding IsAvailable}"
+                                Style="{StaticResource RemoteBtn}"
+                                Command="{Binding DataContext.SendButtonCommand,
+                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="Back"
+                                Width="140"
+                                HorizontalAlignment="Center"
+                                Margin="0,0,0,14">
+                            <TextBlock Text="↩   Back"/>
+                        </Button>
+
+                        <!-- ── Separator ──────────────────────────────────── -->
+                        <Separator Background="{DynamicResource DividerBrush}"
+                                   Margin="0,2,0,14"/>
+
+                        <!-- ── Volume ─────────────────────────────────────── -->
+                        <Grid Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Button Grid.Column="0"
+                                    DataContext="{Binding VolDown}"
+                                    IsEnabled="{Binding IsAvailable}"
+                                    Style="{StaticResource RemoteBtn}"
+                                    Command="{Binding DataContext.SendButtonCommand,
+                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="VolDown"
+                                    HorizontalAlignment="Stretch">
+                                <TextBlock Text="🔉  Vol −"/>
+                            </Button>
+
+                            <Button Grid.Column="2"
+                                    DataContext="{Binding VolUp}"
+                                    IsEnabled="{Binding IsAvailable}"
+                                    Style="{StaticResource RemoteBtn}"
+                                    Command="{Binding DataContext.SendButtonCommand,
+                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="VolUp"
+                                    HorizontalAlignment="Stretch">
+                                <TextBlock Text="Vol +  🔊"/>
+                            </Button>
+                        </Grid>
+
+                        <!-- ── Menu / Config ──────────────────────────────── -->
+                        <Button DataContext="{Binding Menu}"
+                                IsEnabled="{Binding IsAvailable}"
+                                Style="{StaticResource RemoteBtn}"
+                                Command="{Binding DataContext.SendButtonCommand,
+                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="Menu"
+                                Width="140"
+                                HorizontalAlignment="Center">
+                            <TextBlock Text="⚙   Menu"/>
+                        </Button>
+
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </ScrollViewer>
+
+        <!-- ════════════════════════════════════════════════════════════════════
+             STATUS BAR
+             ════════════════════════════════════════════════════════════════════ -->
+        <Border Grid.Row="2"
+                Background="{DynamicResource InfoBarBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="20,8">
+            <TextBlock Text="{Binding StatusMessage}"
+                       FontSize="11"
+                       Foreground="{DynamicResource SubtleTextBrush}"
+                       TextWrapping="Wrap"/>
+        </Border>
+    </Grid>
+</UserControl>

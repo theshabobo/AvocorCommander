@@ -35,6 +35,12 @@ public partial class MainWindow : Window
         VM.Dispose();
     }
 
+    private void Window_StateChanged(object sender, EventArgs e)
+    {
+        if (WindowState == WindowState.Minimized)
+            Hide();
+    }
+
     // ── Dialog handlers ───────────────────────────────────────────────────────
 
     private void OnAddDevice(object? sender, EventArgs e)
@@ -59,6 +65,7 @@ public partial class MainWindow : Window
             device.ComPort        = dlg.Result.ComPort;
             device.BaudRate       = dlg.Result.BaudRate;
             device.ConnectionType = dlg.Result.ConnectionType;
+            device.AutoConnect    = dlg.Result.AutoConnect;
             VM.DevicesVM.UpdateDevice(device);
         }
     }

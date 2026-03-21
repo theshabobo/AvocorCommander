@@ -1,0 +1,164 @@
+<UserControl x:Class="AvocorCommander.Views.AboutView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource AppBgBrush}">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <StackPanel MaxWidth="680"
+                    HorizontalAlignment="Left"
+                    Margin="32,28,32,32">
+
+            <!-- ── Page title ───────────────────────────────────────────────── -->
+            <TextBlock Text="ABOUT"
+                       FontSize="10" FontWeight="Bold"
+                       Foreground="{DynamicResource SubtleTextBrush}"
+                       Margin="0,0,0,20"/>
+
+            <!-- ── App Identity card ────────────────────────────────────────── -->
+            <Border Background="{DynamicResource CardBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="24,20"
+                    Margin="0,0,0,16">
+                <StackPanel>
+                    <TextBlock Text="{Binding AppName}"
+                               FontSize="22" FontWeight="Bold"
+                               Foreground="{DynamicResource PrimaryTextBrush}"/>
+                    <TextBlock Text="{Binding AppVersion}"
+                               FontSize="13"
+                               Foreground="{DynamicResource AccentTextBrush}"
+                               Margin="0,4,0,0"/>
+                    <Separator Background="{DynamicResource DividerBrush}"
+                               Margin="0,14,0,14"/>
+                    <TextBlock Text="{Binding Copyright}"
+                               FontSize="11"
+                               Foreground="{DynamicResource SubtleTextBrush}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- ── Description card ─────────────────────────────────────────── -->
+            <Border Background="{DynamicResource CardBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="24,20"
+                    Margin="0,0,0,16">
+                <StackPanel>
+                    <TextBlock Text="DESCRIPTION"
+                               FontSize="9" FontWeight="Bold"
+                               Foreground="{DynamicResource SubtleTextBrush}"
+                               Margin="0,0,0,10"/>
+                    <TextBlock Text="{Binding Description}"
+                               FontSize="13"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               TextWrapping="Wrap"
+                               LineHeight="20"/>
+                </StackPanel>
+            </Border>
+
+            <!-- ── System Info card ──────────────────────────────────────────── -->
+            <Border Background="{DynamicResource CardBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="24,20">
+                <StackPanel>
+                    <TextBlock Text="SYSTEM INFORMATION"
+                               FontSize="9" FontWeight="Bold"
+                               Foreground="{DynamicResource SubtleTextBrush}"
+                               Margin="0,0,0,14"/>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="160"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- OS Platform -->
+                        <TextBlock Grid.Row="0" Grid.Column="0"
+                                   Text="Operating System"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource SubtleTextBrush}"
+                                   Margin="0,0,0,10"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1"
+                                   Text="{Binding OsPlatform}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,10"/>
+
+                        <!-- OS Version -->
+                        <TextBlock Grid.Row="1" Grid.Column="0"
+                                   Text="OS Version"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource SubtleTextBrush}"
+                                   Margin="0,0,0,10"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1"
+                                   Text="{Binding OsVersion}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,10"/>
+
+                        <!-- .NET Runtime -->
+                        <TextBlock Grid.Row="2" Grid.Column="0"
+                                   Text=".NET Runtime"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource SubtleTextBrush}"
+                                   Margin="0,0,0,10"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1"
+                                   Text="{Binding DotNetVersion}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   Margin="0,0,0,10"/>
+
+                        <!-- Architecture -->
+                        <TextBlock Grid.Row="3" Grid.Column="0"
+                                   Text="Architecture"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource SubtleTextBrush}"
+                                   Margin="0,0,0,10"/>
+                        <TextBlock Grid.Row="3" Grid.Column="1"
+                                   Text="{Binding Architecture}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   Margin="0,0,0,10"/>
+
+                        <!-- Machine Name -->
+                        <TextBlock Grid.Row="4" Grid.Column="0"
+                                   Text="Machine Name"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource SubtleTextBrush}"
+                                   Margin="0,0,0,10"/>
+                        <TextBlock Grid.Row="4" Grid.Column="1"
+                                   Text="{Binding MachineName}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   Margin="0,0,0,10"/>
+
+                        <!-- User Name -->
+                        <TextBlock Grid.Row="5" Grid.Column="0"
+                                   Text="User"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource SubtleTextBrush}"/>
+                        <TextBlock Grid.Row="5" Grid.Column="1"
+                                   Text="{Binding UserName}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

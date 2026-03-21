@@ -58,10 +58,12 @@ public class UpdateService
     // ─────────────────────────────────────────────────────────────────────
 
     private static readonly HttpClient _api;
-    private static readonly HttpClient _download;
+    private static readonly HttpClient _apiAsset;  // resolves CDN redirect, no auto-follow
+    private static readonly HttpClient _cdn;        // downloads from CDN, no auth
 
     static UpdateService()
     {
+        // GitHub metadata API — JSON, follows redirects, authenticated
         _api = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         _api.DefaultRequestHeaders.UserAgent.ParseAdd("AvocorCommander/3.0");
         _api.DefaultRequestHeaders.Accept
@@ -69,12 +71,20 @@ public class UpdateService
         _api.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", Token);
 
-        _download = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
-        _download.DefaultRequestHeaders.UserAgent.ParseAdd("AvocorCommander/3.0");
-        _download.DefaultRequestHeaders.Accept
+        // GitHub asset API — requests the CDN redirect URL but does NOT follow it.
+        // GitHub private assets redirect to a pre-signed CDN URL that must be
+        // fetched without an Authorization header, so we handle the redirect manually.
+        var noRedirectHandler = new HttpClientHandler { AllowAutoRedirect = false };
+        _apiAsset = new HttpClient(noRedirectHandler) { Timeout = TimeSpan.FromSeconds(15) };
+        _apiAsset.DefaultRequestHeaders.UserAgent.ParseAdd("AvocorCommander/3.0");
+        _apiAsset.DefaultRequestHeaders.Accept
             .Add(new MediaTypeWithQualityHeaderValue("application/octet-stream"));
-        _download.DefaultRequestHeaders.Authorization =
+        _apiAsset.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", Token);
+
+        // CDN downloader — no auth, used to stream the actual file from the pre-signed URL
+        _cdn = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+        _cdn.DefaultRequestHeaders.UserAgent.ParseAdd("AvocorCommander/3.0");
     }
 
     public static Version CurrentVersion =>
@@ -173,18 +183,34 @@ public class UpdateService
     private static async Task DownloadAssetAsync(string assetApiUrl, string destPath,
                                                   IProgress<int>? progress)
     {
-        // GitHub private asset download requires the octet-stream Accept header + Bearer token
-        var response = await _download.GetAsync(assetApiUrl,
-                           HttpCompletionOption.ResponseHeadersRead);
+        // ── Step 1: Resolve the CDN pre-signed URL ────────────────────────────
+        // GitHub private release assets respond with a 302 redirect to a
+        // pre-signed CDN URL. We request without auto-follow so we can extract
+        // the Location header and download from the CDN without an auth header
+        // (sending auth to the CDN causes it to reject or truncate the response).
+
+        var redirectResp = await _apiAsset.GetAsync(assetApiUrl);
+
+        Uri? cdnUri = redirectResp.Headers.Location;
+        if (cdnUri == null)
+        {
+            // No redirect — older GitHub API behaviour or public repo; fall back to
+            // reading the response body directly if it looks like a real file.
+            cdnUri = new Uri(assetApiUrl);
+        }
+
+        // ── Step 2: Download the file from the CDN (no auth) ─────────────────
+
+        var response = await _cdn.GetAsync(cdnUri, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
 
-        // Guard: reject HTML error pages
+        // Guard: reject HTML or JSON error pages
         var ct = response.Content.Headers.ContentType?.MediaType ?? "";
         if (ct.Contains("text/html") || ct.Contains("application/json"))
         {
             var body = await response.Content.ReadAsStringAsync();
             throw new InvalidOperationException(
-                $"GitHub returned an unexpected response ({ct}).\n{body[..Math.Min(300, body.Length)]}");
+                $"CDN returned an unexpected response ({ct}).\n{body[..Math.Min(300, body.Length)]}");
         }
 
         var total  = response.Content.Headers.ContentLength ?? -1L;
@@ -207,6 +233,6 @@ public class UpdateService
         if (done < 1_000_000)
             throw new InvalidOperationException(
                 $"Downloaded file is too small ({done:N0} bytes) — expected > 1 MB. " +
-                "Check that the release asset was attached correctly.");
+                "Check that the correct exe was attached to the GitHub release.");
     }
 }

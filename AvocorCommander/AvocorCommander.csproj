@@ -6,11 +6,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>AvocorCommander</AssemblyName>
     <RootNamespace>AvocorCommander</RootNamespace>
-    <Version>3.0.4</Version>
-    <AssemblyVersion>3.0.4.0</AssemblyVersion>
-    <FileVersion>3.0.4.0</FileVersion>
+    <Version>3.2.0</Version>
+    <AssemblyVersion>3.2.0.0</AssemblyVersion>
+    <FileVersion>3.2.0.0</FileVersion>
     <Product>Avocor Commander</Product>
     <Company>Avocor</Company>
     <!-- Single-file publish: bundle native DLLs and suppress .pdb -->

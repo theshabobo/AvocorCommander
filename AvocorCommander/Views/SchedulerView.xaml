@@ -40,6 +40,14 @@
                             Style="{StaticResource SecondaryButton}"
                             Command="{Binding ToggleSchedulerCommand}"
                             Margin="0,0,8,0"/>
+                    <Button Content="&#11014;  Export"
+                            Style="{StaticResource SecondaryButton}"
+                            Command="{Binding ExportRulesCommand}"
+                            Margin="0,0,8,0"/>
+                    <Button Content="&#11015;  Import"
+                            Style="{StaticResource SecondaryButton}"
+                            Command="{Binding ImportRulesCommand}"
+                            Margin="0,0,8,0"/>
                     <Button Content="＋  Add Rule"
                             Style="{StaticResource PrimaryButton}"
                             Command="{Binding AddRuleCommand}"/>

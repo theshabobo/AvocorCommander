@@ -190,6 +190,9 @@ public sealed class ControlViewModel : BaseViewModel
             return;
         }
 
+        if (targets.Count > 1)
+            StatusMessage = $"Sending to {targets.Count} devices…";
+
         string hexStr = string.Join(" ", bytes.Select(b => b.ToString("X2")));
 
         foreach (var device in targets)

@@ -1,0 +1,12 @@
+// Disambiguate WPF vs WinForms types that conflict when UseWindowsForms=true
+global using UserControl    = System.Windows.Controls.UserControl;
+global using ListBox        = System.Windows.Controls.ListBox;
+global using Timer          = System.Threading.Timer;
+global using MessageBox     = System.Windows.MessageBox;
+global using Application    = System.Windows.Application;
+global using Binding        = System.Windows.Data.Binding;
+global using Color          = System.Windows.Media.Color;
+global using ColorConverter = System.Windows.Media.ColorConverter;
+global using Brushes        = System.Windows.Media.Brushes;
+global using SaveFileDialog = Microsoft.Win32.SaveFileDialog;
+global using OpenFileDialog = Microsoft.Win32.OpenFileDialog;

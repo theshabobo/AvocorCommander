@@ -31,7 +31,7 @@ public static class NetworkScanService
         string                           startIp,
         string                           endIp,
         Dictionary<string, string>       ouiSeriesMap,
-        List<string>                     knownModelNumbers,
+        Dictionary<string, string>       modelSeriesMap,   // modelNumber → seriesPattern
         Action<ScanResult>               onResult,
         IProgress<(int done, int total)> progress,
         CancellationToken                ct)
@@ -94,7 +94,7 @@ public static class NetworkScanService
 
                 bool   online   = pingResults.TryGetValue(ip, out var o) && o;
                 string hostname = online ? await ResolveHostAsync(ip) : string.Empty;
-                string model    = MatchModel(series, knownModelNumbers);
+                string model    = MatchModel(series, modelSeriesMap);
 
                 onResult(new ScanResult
                 {
@@ -128,7 +128,7 @@ public static class NetworkScanService
                 if (hint == null) return;
 
                 string hostname = await ResolveHostAsync(ip);
-                string model    = MatchModel(hint, knownModelNumbers);
+                string model    = MatchModel(hint, modelSeriesMap);
 
                 onResult(new ScanResult
                 {
@@ -221,17 +221,12 @@ public static class NetworkScanService
         catch { return string.Empty; }
     }
 
-    private static string MatchModel(string series, List<string> knownModels)
+    private static string MatchModel(string series, Dictionary<string, string> modelSeriesMap)
     {
-        return knownModels.FirstOrDefault(m =>
-            m.StartsWith("AVE") && series.StartsWith("E") ||
-            m.StartsWith("AVA") && series == "A-Series"   ||
-            m.StartsWith("AVB") && series == "B-Series"   ||
-            m.StartsWith("AVK") && series == "K-Series"   ||
-            m.StartsWith("AVS") && series == "S-Series"   ||
-            m.StartsWith("AVX") && series == "X-Series"   ||
-            m.StartsWith("AVH") && series == "H/L/9200"   ||
-            m.StartsWith("AVL") && series == "H/L/9200") ?? series;
+        // Exact lookup: find a model whose series pattern matches the detected series
+        var match = modelSeriesMap.FirstOrDefault(kv =>
+            string.Equals(kv.Value, series, StringComparison.OrdinalIgnoreCase));
+        return match.Key ?? series;
     }
 
     private static List<string> EnumerateIPs(string start, string end)

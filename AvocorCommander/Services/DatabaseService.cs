@@ -81,6 +81,7 @@ public sealed class DatabaseService : IDisposable
             ("MacAddress",     "TEXT    DEFAULT ''"),
             ("ConnectionType", "TEXT    DEFAULT 'TCP'"),
             ("LastSeenAt",     "TEXT    DEFAULT ''"),
+            ("AutoConnect",    "INTEGER DEFAULT 0"),
         })
         {
             try
@@ -98,6 +99,26 @@ public sealed class DatabaseService : IDisposable
             cmd.ExecuteNonQuery();
         }
         catch (SqliteException) { /* column already exists */ }
+
+        // B-Series uses ASCII protocol — fix any rows that were inserted with the default HEX format
+        cmd.CommandText = "UPDATE DeviceList SET CommandFormat='ASCII' WHERE SeriesPattern='B-Series' AND CommandFormat='HEX';";
+        cmd.ExecuteNonQuery();
+
+        // B-Series IR commands: correct codes use short form (!IR Up, not !IR Cursor Up)
+        foreach (var (wrong, correct) in new[]
+        {
+            ("!IR Cursor Up",    "!IR Up"),
+            ("!IR Cursor Down",  "!IR Down"),
+            ("!IR Cursor Left",  "!IR Left"),
+            ("!IR Cursor Right", "!IR Right"),
+        })
+        {
+            cmd.CommandText = "UPDATE DeviceList SET CommandCode=$correct WHERE SeriesPattern='B-Series' AND CommandCode=$wrong;";
+            cmd.Parameters.Clear();
+            cmd.Parameters.AddWithValue("$correct", correct);
+            cmd.Parameters.AddWithValue("$wrong",   wrong);
+            cmd.ExecuteNonQuery();
+        }
 
         // Migrate ScheduleRules — add history columns
         foreach (var (col, def) in new[]
@@ -180,7 +201,8 @@ public sealed class DatabaseService : IDisposable
                    COALESCE(ComPort,'')           AS ComPort,
                    COALESCE(MacAddress,'')        AS MacAddress,
                    COALESCE(ConnectionType,'TCP') AS ConnectionType,
-                   COALESCE(LastSeenAt,'')        AS LastSeenAt
+                   COALESCE(LastSeenAt,'')        AS LastSeenAt,
+                   COALESCE(AutoConnect,0)        AS AutoConnect
             FROM   StoredDevices
             ORDER  BY DeviceName;
             """;
@@ -201,6 +223,7 @@ public sealed class DatabaseService : IDisposable
                 MacAddress     = rdr.GetString(8),
                 ConnectionType = rdr.GetString(9),
                 LastSeenAt     = rdr.GetString(10),
+                AutoConnect    = rdr.GetInt32(11) == 1,
             });
         }
         return list;
@@ -213,10 +236,10 @@ public sealed class DatabaseService : IDisposable
         cmd.CommandText = """
             INSERT INTO StoredDevices
                 (DeviceName, ModelNumber, IPAddress, Port, BaudRate,
-                 Notes, ComPort, MacAddress, ConnectionType)
+                 Notes, ComPort, MacAddress, ConnectionType, AutoConnect)
             VALUES
                 ($name, $model, $ip, $port, $baud,
-                 $notes, $com, $mac, $ctype);
+                 $notes, $com, $mac, $ctype, $autoconnect);
             SELECT last_insert_rowid();
             """;
         cmd.Parameters.AddWithValue("$name",  d.DeviceName);
@@ -225,9 +248,10 @@ public sealed class DatabaseService : IDisposable
         cmd.Parameters.AddWithValue("$port",  d.Port);
         cmd.Parameters.AddWithValue("$baud",  d.BaudRate);
         cmd.Parameters.AddWithValue("$notes", d.Notes);
-        cmd.Parameters.AddWithValue("$com",   d.ComPort);
-        cmd.Parameters.AddWithValue("$mac",   d.MacAddress);
-        cmd.Parameters.AddWithValue("$ctype", d.ConnectionType);
+        cmd.Parameters.AddWithValue("$com",         d.ComPort);
+        cmd.Parameters.AddWithValue("$mac",         d.MacAddress);
+        cmd.Parameters.AddWithValue("$ctype",       d.ConnectionType);
+        cmd.Parameters.AddWithValue("$autoconnect", d.AutoConnect ? 1 : 0);
         return System.Convert.ToInt32(cmd.ExecuteScalar());
     }
 
@@ -239,7 +263,8 @@ public sealed class DatabaseService : IDisposable
             UPDATE StoredDevices
             SET    DeviceName=$name, ModelNumber=$model, IPAddress=$ip,
                    Port=$port, BaudRate=$baud, Notes=$notes,
-                   ComPort=$com, MacAddress=$mac, ConnectionType=$ctype
+                   ComPort=$com, MacAddress=$mac, ConnectionType=$ctype,
+                   AutoConnect=$autoconnect
             WHERE  id=$id;
             """;
         cmd.Parameters.AddWithValue("$id",    d.Id);
@@ -249,9 +274,10 @@ public sealed class DatabaseService : IDisposable
         cmd.Parameters.AddWithValue("$port",  d.Port);
         cmd.Parameters.AddWithValue("$baud",  d.BaudRate);
         cmd.Parameters.AddWithValue("$notes", d.Notes);
-        cmd.Parameters.AddWithValue("$com",   d.ComPort);
-        cmd.Parameters.AddWithValue("$mac",   d.MacAddress);
-        cmd.Parameters.AddWithValue("$ctype", d.ConnectionType);
+        cmd.Parameters.AddWithValue("$com",         d.ComPort);
+        cmd.Parameters.AddWithValue("$mac",         d.MacAddress);
+        cmd.Parameters.AddWithValue("$ctype",       d.ConnectionType);
+        cmd.Parameters.AddWithValue("$autoconnect", d.AutoConnect ? 1 : 0);
         cmd.ExecuteNonQuery();
     }
 
@@ -263,6 +289,9 @@ public sealed class DatabaseService : IDisposable
         cmd.Parameters.AddWithValue("$id", id);
         cmd.ExecuteNonQuery();
     }
+
+    public List<DeviceEntry> GetAutoConnectDevices() =>
+        GetAllDevices().Where(d => d.AutoConnect).ToList();
 
     // ══════════════════════════════════════════════════════════════════════════
     //  COMMANDS (DeviceList)

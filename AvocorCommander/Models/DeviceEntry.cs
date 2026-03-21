@@ -16,6 +16,7 @@ public sealed class DeviceEntry : BaseViewModel
     private string _connectionType = "TCP";
     private string _notes       = string.Empty;
     private string _lastSeenAt  = string.Empty;
+    private bool   _autoConnect;
 
     public int    Id           { get => _id;             set => Set(ref _id, value); }
     public string DeviceName   { get => _deviceName;     set => Set(ref _deviceName, value); }
@@ -29,6 +30,7 @@ public sealed class DeviceEntry : BaseViewModel
     public string ConnectionType { get => _connectionType; set => Set(ref _connectionType, value); }
     public string Notes        { get => _notes;          set => Set(ref _notes, value); }
     public string LastSeenAt   { get => _lastSeenAt;     set { Set(ref _lastSeenAt, value); OnPropertyChanged(nameof(LastSeenDisplay)); } }
+    public bool   AutoConnect  { get => _autoConnect;    set => Set(ref _autoConnect, value); }
 
     public string LastSeenDisplay => string.IsNullOrEmpty(LastSeenAt) ? "Never connected" : $"Last seen: {LastSeenAt}";
 

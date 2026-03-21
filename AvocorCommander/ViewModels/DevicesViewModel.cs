@@ -2,6 +2,8 @@ using AvocorCommander.Core;
 using AvocorCommander.Models;
 using AvocorCommander.Services;
 using System.Collections.ObjectModel;
+using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
@@ -48,12 +50,15 @@ public sealed class DevicesViewModel : BaseViewModel
     public ICommand RefreshCommand      { get; }
     public ICommand ExportDevicesCommand { get; }
     public ICommand ImportDevicesCommand { get; }
+    public ICommand WakeOnLanCommand    { get; }
+    public ICommand ViewHistoryCommand  { get; }
 
     // ── Events raised for View ────────────────────────────────────────────────
 
     public event EventHandler?                     AddDeviceRequested;
     public event EventHandler<DeviceEntry>?        EditDeviceRequested;
     public event EventHandler?                     ScanNetworkRequested;
+    public event EventHandler<string>?             ViewHistoryRequested;
 
     public DevicesViewModel(DatabaseService db, ConnectionManager connMgr)
     {
@@ -78,6 +83,8 @@ public sealed class DevicesViewModel : BaseViewModel
         RefreshCommand       = new RelayCommand(LoadDevices);
         ExportDevicesCommand = new RelayCommand(ExportDevices);
         ImportDevicesCommand = new RelayCommand(ImportDevices);
+        WakeOnLanCommand     = new AsyncRelayCommand<DeviceEntry>(WakeOnLanAsync, d => d != null && !string.IsNullOrWhiteSpace(d.MacAddress));
+        ViewHistoryCommand   = new RelayCommand<DeviceEntry>(d => { if (d != null) ViewHistoryRequested?.Invoke(this, d.DeviceName); }, d => d != null);
     }
 
     // ── Initialization ────────────────────────────────────────────────────────
@@ -270,5 +277,36 @@ public sealed class DevicesViewModel : BaseViewModel
         }
 
         AddDevice(device);
+    }
+
+    // ── Wake on LAN ───────────────────────────────────────────────────────────
+
+    private async Task WakeOnLanAsync(DeviceEntry? device)
+    {
+        if (device == null) return;
+        var mac = device.MacAddress.Trim();
+        if (string.IsNullOrEmpty(mac)) return;
+        try
+        {
+            var macBytes = mac.Split(':', '-', '.').Select(s => Convert.ToByte(s, 16)).ToArray();
+            if (macBytes.Length != 6) throw new FormatException("MAC must be 6 bytes.");
+            var packet = new byte[6 + 16 * 6];
+            for (int i = 0; i < 6; i++) packet[i] = 0xFF;
+            for (int i = 0; i < 16; i++) Array.Copy(macBytes, 0, packet, 6 + i * 6, 6);
+            using var udp = new UdpClient();
+            udp.EnableBroadcast = true;
+            await udp.SendAsync(packet, packet.Length, new IPEndPoint(IPAddress.Broadcast, 9));
+            _db.LogCommand(new AuditLogEntry
+            {
+                Timestamp     = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                DeviceName    = device.DeviceName, DeviceAddress = device.IPAddress,
+                CommandName   = "Wake on LAN", CommandCode = mac, Success = true,
+            });
+            StatusMessage = $"WoL packet sent to {device.DeviceName} ({mac})";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Wake on LAN failed: {ex.Message}";
+        }
     }
 }

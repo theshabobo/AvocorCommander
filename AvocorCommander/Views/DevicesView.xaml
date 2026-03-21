@@ -111,6 +111,16 @@
                                                TextTrimming="CharacterEllipsis"/>
                                     <StackPanel Orientation="Horizontal"
                                                 HorizontalAlignment="Right">
+                                        <Button Content="⚡" Style="{StaticResource IconButton}"
+                                                ToolTip="Wake on LAN"
+                                                Command="{Binding DataContext.WakeOnLanCommand,
+                                                    RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Content="☰" Style="{StaticResource IconButton}"
+                                                ToolTip="View command history"
+                                                Command="{Binding DataContext.ViewHistoryCommand,
+                                                    RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"/>
                                         <Button Content="✏" Style="{StaticResource IconButton}"
                                                 ToolTip="Edit"
                                                 Command="{Binding DataContext.EditDeviceCommand,

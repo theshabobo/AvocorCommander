@@ -2,6 +2,7 @@ using AvocorCommander.Core;
 using AvocorCommander.Models;
 using AvocorCommander.Services;
 using System.Collections.ObjectModel;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
 
@@ -36,13 +37,15 @@ public sealed class SchedulerViewModel : BaseViewModel
 
     // ── Commands ─────────────────────────────────────────────────────────────
 
-    public ICommand AddRuleCommand            { get; }
-    public ICommand EditRuleCommand           { get; }
-    public ICommand DeleteRuleCommand         { get; }
-    public ICommand ToggleRuleCommand         { get; }
-    public ICommand RunNowCommand             { get; }
-    public ICommand ToggleSchedulerCommand    { get; }
-    public ICommand RefreshCommand            { get; }
+    public ICommand AddRuleCommand         { get; }
+    public ICommand EditRuleCommand        { get; }
+    public ICommand DeleteRuleCommand      { get; }
+    public ICommand ToggleRuleCommand      { get; }
+    public ICommand RunNowCommand          { get; }
+    public ICommand ToggleSchedulerCommand { get; }
+    public ICommand RefreshCommand         { get; }
+    public ICommand ExportRulesCommand     { get; }
+    public ICommand ImportRulesCommand     { get; }
 
     public SchedulerViewModel(DatabaseService db, SchedulerService scheduler)
     {
@@ -62,6 +65,8 @@ public sealed class SchedulerViewModel : BaseViewModel
         RunNowCommand          = new AsyncRelayCommand<ScheduleRule>(RunNowAsync, r => r != null);
         ToggleSchedulerCommand = new RelayCommand(ToggleScheduler);
         RefreshCommand         = new RelayCommand(LoadRules);
+        ExportRulesCommand     = new RelayCommand(ExportRules);
+        ImportRulesCommand     = new RelayCommand(ImportRules);
     }
 
     public void LoadRules()
@@ -135,6 +140,103 @@ public sealed class SchedulerViewModel : BaseViewModel
         StatusMessage = $"Running: {rule.RuleName}…";
         await _scheduler.RunRuleNowAsync(rule);
         StatusMessage = $"Completed: {rule.RuleName}  at {DateTime.Now:HH:mm:ss}";
+    }
+
+    private void ExportRules()
+    {
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Title      = "Export Schedule Rules",
+            Filter     = "JSON (*.json)|*.json",
+            DefaultExt = ".json",
+            FileName   = $"ScheduleRules_{DateTime.Now:yyyyMMdd}",
+        };
+        if (dlg.ShowDialog() != true) return;
+        try
+        {
+            var records = Rules.Select(r => new
+            {
+                r.RuleName, r.ScheduleTime, r.Recurrence, r.IsEnabled, r.Notes,
+                r.CommandName, r.TargetName,
+                TargetType = r.GroupId.HasValue ? "Group" : "Device",
+            });
+            var json = JsonSerializer.Serialize(records, new JsonSerializerOptions { WriteIndented = true });
+            System.IO.File.WriteAllText(dlg.FileName, json);
+            StatusMessage = $"Exported {Rules.Count} rule(s) to {System.IO.Path.GetFileName(dlg.FileName)}";
+        }
+        catch (Exception ex) { StatusMessage = $"Export failed: {ex.Message}"; }
+    }
+
+    private void ImportRules()
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title  = "Import Schedule Rules",
+            Filter = "JSON (*.json)|*.json",
+        };
+        if (dlg.ShowDialog() != true) return;
+        try
+        {
+            var json    = System.IO.File.ReadAllText(dlg.FileName);
+            var records = JsonSerializer.Deserialize<List<JsonElement>>(json);
+            if (records == null) return;
+
+            var allCommands = _db.GetAllCommands();
+            var allDevices  = _db.GetAllDevices();
+            var allGroups   = _db.GetAllGroups();
+            int added = 0;
+
+            foreach (var r in records)
+            {
+                var name = r.TryGetProperty("RuleName", out var p) ? p.GetString() ?? "" : "";
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                if (Rules.Any(x => x.RuleName.Equals(name, StringComparison.OrdinalIgnoreCase))) continue;
+
+                var cmdName    = r.TryGetProperty("CommandName", out var cn) ? cn.GetString() ?? "" : "";
+                var targetName = r.TryGetProperty("TargetName",  out var tn) ? tn.GetString() ?? "" : "";
+                var targetType = r.TryGetProperty("TargetType",  out var tt) ? tt.GetString() ?? "Device" : "Device";
+
+                var cmd = allCommands.FirstOrDefault(c =>
+                    c.CommandName.Equals(cmdName, StringComparison.OrdinalIgnoreCase));
+                if (cmd == null) continue;
+
+                int? deviceId = null;
+                int? groupId  = null;
+                string resolvedTarget = targetName;
+
+                if (targetType == "Group")
+                {
+                    var grp = allGroups.FirstOrDefault(g =>
+                        g.GroupName.Equals(targetName, StringComparison.OrdinalIgnoreCase));
+                    if (grp != null) { groupId = grp.Id; resolvedTarget = grp.GroupName; }
+                }
+                else
+                {
+                    var dev = allDevices.FirstOrDefault(d =>
+                        d.DeviceName.Equals(targetName, StringComparison.OrdinalIgnoreCase));
+                    if (dev != null) { deviceId = dev.Id; resolvedTarget = dev.DeviceName; }
+                }
+
+                if (deviceId == null && groupId == null) continue;
+
+                AddRule(new ScheduleRule
+                {
+                    RuleName     = name,
+                    ScheduleTime = r.TryGetProperty("ScheduleTime", out var st)  ? st.GetString()  ?? "08:00" : "08:00",
+                    Recurrence   = r.TryGetProperty("Recurrence",   out var rec) ? rec.GetString() ?? "Daily"  : "Daily",
+                    IsEnabled    = r.TryGetProperty("IsEnabled",    out var ie)  && ie.GetBoolean(),
+                    Notes        = r.TryGetProperty("Notes",        out var nt)  ? nt.GetString()  ?? "" : "",
+                    CommandId    = cmd.Id,
+                    CommandName  = cmd.CommandName,
+                    DeviceId     = deviceId,
+                    GroupId      = groupId,
+                    TargetName   = resolvedTarget,
+                });
+                added++;
+            }
+            StatusMessage = $"Imported {added} new rule(s) from {System.IO.Path.GetFileName(dlg.FileName)}";
+        }
+        catch (Exception ex) { StatusMessage = $"Import failed: {ex.Message}"; }
     }
 
     private void App_OnSchedulerFired(string ruleName)

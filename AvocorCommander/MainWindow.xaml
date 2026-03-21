@@ -10,7 +10,8 @@
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource AppBgBrush}"
         Loaded="Window_Loaded"
-        Closing="Window_Closing">
+        Closing="Window_Closing"
+        StateChanged="Window_StateChanged">
 
     <Window.Resources>
         <!-- Map each section ViewModel to its View UserControl -->
@@ -19,6 +20,9 @@
         </DataTemplate>
         <DataTemplate DataType="{x:Type vm:ControlViewModel}">
             <views:ControlView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:RemoteViewModel}">
+            <views:RemoteView/>
         </DataTemplate>
         <DataTemplate DataType="{x:Type vm:StatusViewModel}">
             <views:StatusView/>
@@ -35,6 +39,15 @@
 
         <DataTemplate DataType="{x:Type vm:DatabaseViewModel}">
             <views:DatabaseView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:AboutViewModel}">
+            <views:AboutView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:DashboardViewModel}">
+            <views:DashboardView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:GroupsViewModel}">
+            <views:GroupsView/>
         </DataTemplate>
 
         <core:EqualsToBoolConverter     x:Key="EqBool"/>
@@ -78,6 +91,24 @@
                 <!-- Nav items -->
                 <StackPanel DockPanel.Dock="Top">
 
+                    <Button Command="{Binding NavDashboardCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentSection}" Value="Dashboard">
+                                        <Setter Property="Background"  Value="{DynamicResource NavActiveBackBrush}"/>
+                                        <Setter Property="Foreground"  Value="{DynamicResource NavActiveForeBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#9635;" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Dashboard" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
                     <Button Command="{Binding NavDevicesCommand}">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
@@ -96,6 +127,24 @@
                         </StackPanel>
                     </Button>
 
+                    <Button Command="{Binding NavGroupsCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentSection}" Value="Groups">
+                                        <Setter Property="Background"  Value="{DynamicResource NavActiveBackBrush}"/>
+                                        <Setter Property="Foreground"  Value="{DynamicResource NavActiveForeBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#9633;" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Groups" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
                     <Button Command="{Binding NavControlCommand}">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
@@ -111,6 +160,24 @@
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="▶" FontSize="12" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <TextBlock Text="Control" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Command="{Binding NavRemoteCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentSection}" Value="Remote">
+                                        <Setter Property="Background"  Value="{DynamicResource NavActiveBackBrush}"/>
+                                        <Setter Property="Foreground"  Value="{DynamicResource NavActiveForeBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="⊡" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Virtual Remote" FontSize="13" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
 
@@ -208,6 +275,26 @@
                         </StackPanel>
                     </Button>
 
+                    <Separator Margin="16,8"/>
+
+                    <Button Command="{Binding NavAboutCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentSection}" Value="About">
+                                        <Setter Property="Background"  Value="{DynamicResource NavActiveBackBrush}"/>
+                                        <Setter Property="Foreground"  Value="{DynamicResource NavActiveForeBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="ℹ" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="About" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
                 </StackPanel>
 
                 <!-- Bottom: update check -->
@@ -217,7 +304,7 @@
                         BorderThickness="0,1,0,0"
                         Padding="12,10">
                     <StackPanel>
-                        <Button Content="&#8635;  Check for Updates"
+                        <Button Content="{Binding SidebarButtonLabel}"
                                 Style="{StaticResource SecondaryButton}"
                                 Command="{Binding CheckForUpdatesCommand}"
                                 HorizontalAlignment="Stretch"
@@ -252,8 +339,51 @@
         <!-- ════════════════════════════════════════════════════════════════════
              MAIN CONTENT — DataTemplate auto-selects the View
              ════════════════════════════════════════════════════════════════════ -->
-        <ContentControl Grid.Column="1"
-                        Content="{Binding CurrentViewModel}"
-                        Focusable="False"/>
+        <Grid Grid.Column="1">
+
+            <ContentControl Content="{Binding CurrentViewModel}"
+                            Focusable="False"/>
+
+            <!-- ── Update available banner — overlaid at top of content ──────── -->
+            <Border VerticalAlignment="Top"
+                    Background="#0F2010"
+                    BorderBrush="{DynamicResource SuccessBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="18,10"
+                    Panel.ZIndex="10"
+                    Visibility="{Binding HasPendingUpdate, Converter={StaticResource BoolToVis}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="🔄  " FontSize="13"/>
+                        <TextBlock Text="{Binding PendingUpdateText}"
+                                   Foreground="{DynamicResource SuccessBrush}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <Button Grid.Column="1"
+                            Content="Install Now"
+                            Style="{StaticResource PrimaryButton}"
+                            Command="{Binding CheckForUpdatesCommand}"
+                            Padding="14,5"
+                            FontSize="11"/>
+
+                    <Button Grid.Column="3"
+                            Content="✕"
+                            Style="{StaticResource SecondaryButton}"
+                            Command="{Binding DismissBannerCommand}"
+                            Padding="10,5"
+                            FontSize="11"/>
+                </Grid>
+            </Border>
+
+        </Grid>
     </Grid>
 </Window>

@@ -84,7 +84,13 @@
 
             <!-- Notes -->
             <TextBlock Text="Notes (optional)" Style="{StaticResource FieldLabel}"/>
-            <TextBox x:Name="TxtNotes" Margin="0,0,0,20"/>
+            <TextBox x:Name="TxtNotes" Margin="0,0,0,12"/>
+
+            <!-- Auto Connect -->
+            <CheckBox x:Name="ChkAutoConnect"
+                      Content="Auto-connect on startup"
+                      Margin="0,0,0,16"
+                      FontSize="12"/>
 
             <!-- Buttons -->
             <Separator Margin="0,0,0,14"/>

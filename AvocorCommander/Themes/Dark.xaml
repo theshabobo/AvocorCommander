@@ -4,48 +4,49 @@
     <!-- ── Palette ──────────────────────────────────────────────────────────── -->
 
     <!-- Backgrounds -->
-    <SolidColorBrush x:Key="AppBgBrush"         Color="#0F1117"/>
-    <SolidColorBrush x:Key="SidebarBrush"        Color="#0D111C"/>
-    <SolidColorBrush x:Key="SidebarHeaderBrush"  Color="#080C15"/>
-    <SolidColorBrush x:Key="CardBrush"           Color="#171C2A"/>
-    <SolidColorBrush x:Key="CardHoverBrush"      Color="#1D2336"/>
-    <SolidColorBrush x:Key="PanelBrush"          Color="#131825"/>
-    <SolidColorBrush x:Key="InputBgBrush"        Color="#1A2236"/>
-    <SolidColorBrush x:Key="InfoBarBrush"        Color="#141928"/>
-    <SolidColorBrush x:Key="LogBgBrush"          Color="#0C1018"/>
-    <SolidColorBrush x:Key="TabActiveBrush"      Color="#1A2236"/>
-    <SolidColorBrush x:Key="TabInactiveBrush"    Color="#0D111C"/>
+    <SolidColorBrush x:Key="AppBgBrush"         Color="#0E1220"/>
+    <SolidColorBrush x:Key="SidebarBrush"        Color="#090E1A"/>
+    <SolidColorBrush x:Key="SidebarHeaderBrush"  Color="#060A14"/>
+    <SolidColorBrush x:Key="CardBrush"           Color="#141A28"/>
+    <SolidColorBrush x:Key="CardHoverBrush"      Color="#1B2338"/>
+    <SolidColorBrush x:Key="PanelBrush"          Color="#0F1520"/>
+    <SolidColorBrush x:Key="InputBgBrush"        Color="#141D30"/>
+    <SolidColorBrush x:Key="InfoBarBrush"        Color="#101826"/>
+    <SolidColorBrush x:Key="LogBgBrush"          Color="#090D18"/>
+    <SolidColorBrush x:Key="TabActiveBrush"      Color="#182236"/>
+    <SolidColorBrush x:Key="TabInactiveBrush"    Color="#090E1A"/>
 
     <!-- Borders -->
-    <SolidColorBrush x:Key="BorderBrush"         Color="#1E2A3E"/>
-    <SolidColorBrush x:Key="BorderAccentBrush"   Color="#0078D4"/>
-    <SolidColorBrush x:Key="InputBorderBrush"    Color="#2E4868"/>
-    <SolidColorBrush x:Key="DividerBrush"        Color="#182030"/>
+    <SolidColorBrush x:Key="BorderBrush"         Color="#1C2840"/>
+    <SolidColorBrush x:Key="BorderAccentBrush"   Color="#0082E6"/>
+    <SolidColorBrush x:Key="InputBorderBrush"    Color="#273A56"/>
+    <SolidColorBrush x:Key="DividerBrush"        Color="#141E30"/>
 
     <!-- Text -->
-    <SolidColorBrush x:Key="PrimaryTextBrush"    Color="#EDF2F8"/>
-    <SolidColorBrush x:Key="SecondaryTextBrush"  Color="#A8B6C4"/>
-    <SolidColorBrush x:Key="SubtleTextBrush"     Color="#6E8090"/>
-    <SolidColorBrush x:Key="AccentTextBrush"     Color="#6AB4FF"/>
-    <SolidColorBrush x:Key="LabelBrush"          Color="#C0CDD8"/>
-    <SolidColorBrush x:Key="PlaceholderBrush"    Color="#4A607A"/>
-    <SolidColorBrush x:Key="InputFgBrush"        Color="#DDE6F0"/>
+    <SolidColorBrush x:Key="PrimaryTextBrush"    Color="#E8EEF6"/>
+    <SolidColorBrush x:Key="SecondaryTextBrush"  Color="#9BAEBF"/>
+    <SolidColorBrush x:Key="SubtleTextBrush"     Color="#5E7488"/>
+    <SolidColorBrush x:Key="AccentTextBrush"     Color="#5AB0FF"/>
+    <SolidColorBrush x:Key="LabelBrush"          Color="#B8C8D8"/>
+    <SolidColorBrush x:Key="PlaceholderBrush"    Color="#405570"/>
+    <SolidColorBrush x:Key="InputFgBrush"        Color="#D8E4F0"/>
 
     <!-- Accent / state -->
-    <SolidColorBrush x:Key="AccentBrush"         Color="#0078D4"/>
-    <SolidColorBrush x:Key="AccentHoverBrush"    Color="#1086E0"/>
-    <SolidColorBrush x:Key="AccentPressedBrush"  Color="#006ABE"/>
-    <SolidColorBrush x:Key="SuccessBrush"        Color="#16C080"/>
-    <SolidColorBrush x:Key="ErrorBrush"          Color="#E74C3C"/>
-    <SolidColorBrush x:Key="WarningBrush"        Color="#F39C12"/>
-    <SolidColorBrush x:Key="WarnBgBrush"         Color="#2A1F06"/>
-    <SolidColorBrush x:Key="WarnFgBrush"         Color="#D4AA40"/>
+    <SolidColorBrush x:Key="AccentBrush"         Color="#0082E6"/>
+    <SolidColorBrush x:Key="AccentHoverBrush"    Color="#1090F0"/>
+    <SolidColorBrush x:Key="AccentPressedBrush"  Color="#0074D0"/>
+    <SolidColorBrush x:Key="AccentLightBrush"    Color="#1A4A7A"/>
+    <SolidColorBrush x:Key="SuccessBrush"        Color="#14C47A"/>
+    <SolidColorBrush x:Key="ErrorBrush"          Color="#E54444"/>
+    <SolidColorBrush x:Key="WarningBrush"        Color="#F0A020"/>
+    <SolidColorBrush x:Key="WarnBgBrush"         Color="#281C04"/>
+    <SolidColorBrush x:Key="WarnFgBrush"         Color="#CCA030"/>
 
     <!-- Nav -->
-    <SolidColorBrush x:Key="NavHoverBrush"        Color="#1A2236"/>
-    <SolidColorBrush x:Key="NavActiveBrush"       Color="#1E2D48"/>
-    <SolidColorBrush x:Key="NavActiveBorderBrush" Color="#0078D4"/>
-    <SolidColorBrush x:Key="NavActiveBackBrush"   Color="#1E2D48"/>
-    <SolidColorBrush x:Key="NavActiveForeBrush"   Color="#58A6FF"/>
+    <SolidColorBrush x:Key="NavHoverBrush"        Color="#141E34"/>
+    <SolidColorBrush x:Key="NavActiveBrush"       Color="#19264A"/>
+    <SolidColorBrush x:Key="NavActiveBorderBrush" Color="#0082E6"/>
+    <SolidColorBrush x:Key="NavActiveBackBrush"   Color="#19264A"/>
+    <SolidColorBrush x:Key="NavActiveForeBrush"   Color="#5AB0FF"/>
 
 </ResourceDictionary>

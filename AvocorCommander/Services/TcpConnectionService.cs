@@ -48,14 +48,27 @@ public sealed class TcpConnectionService : IConnectionService
         {
             await _stream.WriteAsync(data);
 
-            using var cts    = new CancellationTokenSource(receiveTimeoutMs);
-            var       buffer = new byte[4096];
-            int       read   = await _stream.ReadAsync(buffer, cts.Token);
+            using var cts   = new CancellationTokenSource(receiveTimeoutMs);
+            var       buf   = new byte[4096];
+            var       accum = new List<byte>(256);
 
-            return read > 0 ? buffer[..read] : null;
+            // ASCII commands end with CR (0x0D) — keep reading until the response CR arrives.
+            // Binary commands (K-Series, E-Group1, etc.) do not end with CR — a single read
+            // is sufficient since device frames arrive in one TCP segment.
+            bool isAscii = data.Length > 0 && data[^1] == 0x0D;
+
+            do
+            {
+                int read = await _stream.ReadAsync(buf, cts.Token);
+                if (read == 0) break;   // remote closed connection
+                accum.AddRange(buf.AsSpan(0, read));
+            }
+            while (isAscii && accum[^1] != 0x0D && !cts.IsCancellationRequested);
+
+            return accum.Count > 0 ? [.. accum] : null;
         }
         catch (OperationCanceledException) { return null; }
-        catch                              { return null; }
+        catch { await CleanupAsync(); return null; }  // socket error — mark disconnected so caller can reconnect
     }
 
     private async Task CleanupAsync()

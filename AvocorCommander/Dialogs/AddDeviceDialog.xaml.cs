@@ -56,6 +56,7 @@ public partial class AddDeviceDialog : Window
         {
             RdoTcp.IsChecked = true;
         }
+        ChkAutoConnect.IsChecked = d.AutoConnect;
     }
 
     // ── Model selection → auto-fill port ─────────────────────────────────────
@@ -75,9 +76,18 @@ public partial class AddDeviceDialog : Window
             if (series != null)
             {
                 var cmds = _db.GetCommandsBySeries(series);
-                var port = cmds.FirstOrDefault()?.Port;
-                if (port.HasValue && port.Value > 0)
-                    TxtPort.Text = port.Value.ToString();
+                var sample = cmds.FirstOrDefault();
+                if (sample != null && sample.Port > 0)
+                {
+                    TxtPort.Text = sample.Port.ToString();
+                    // Auto-select TCP when port is known
+                    RdoTcp.IsChecked = true;
+                }
+                else if (sample != null && sample.Port == 0)
+                {
+                    // No TCP port — default to Serial
+                    RdoSerial.IsChecked = true;
+                }
             }
         }
     }
@@ -115,6 +125,7 @@ public partial class AddDeviceDialog : Window
             ComPort        = CmbComPort.Text.Trim(),
             BaudRate       = int.TryParse(CmbBaud.Text, out var b) ? b : 9600,
             ConnectionType = isTcp ? "TCP" : "Serial",
+            AutoConnect    = ChkAutoConnect.IsChecked == true,
         };
 
         DialogResult = true;

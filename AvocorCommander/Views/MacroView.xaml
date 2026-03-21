@@ -25,6 +25,10 @@
                 <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Content="&#8635;  Refresh" Style="{StaticResource SecondaryButton}"
                             Command="{Binding RefreshCommand}" Margin="0,0,8,0"/>
+                    <Button Content="&#11014;  Export" Style="{StaticResource SecondaryButton}"
+                            Command="{Binding ExportMacrosCommand}" Margin="0,0,8,0"/>
+                    <Button Content="&#11015;  Import" Style="{StaticResource SecondaryButton}"
+                            Command="{Binding ImportMacrosCommand}" Margin="0,0,8,0"/>
                     <Button Content="&#65291;  Add Macro" Style="{StaticResource PrimaryButton}"
                             Command="{Binding AddMacroCommand}"/>
                 </StackPanel>
@@ -104,6 +108,10 @@
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                                             <Button Content="&#9998;" Style="{StaticResource IconButton}" ToolTip="Edit macro"
                                                     Command="{Binding DataContext.EditMacroCommand,
+                                                        RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"/>
+                                            <Button Content="&#10697;" Style="{StaticResource IconButton}" ToolTip="Duplicate macro"
+                                                    Command="{Binding DataContext.DuplicateMacroCommand,
                                                         RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                     CommandParameter="{Binding}"/>
                                             <Button Content="&#10005;" Style="{StaticResource IconButton}" ToolTip="Delete"
