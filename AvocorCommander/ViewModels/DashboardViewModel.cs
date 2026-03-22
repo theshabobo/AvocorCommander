@@ -23,8 +23,13 @@ public sealed class DashboardViewModel : BaseViewModel, IDisposable
     private bool _isRefreshing;
     public bool IsRefreshing { get => _isRefreshing; set => Set(ref _isRefreshing, value); }
 
-    public ICommand RefreshCommand    { get; }
-    public ICommand WakeOnLanCommand  { get; }
+    public ICommand RefreshCommand       { get; }
+    public ICommand WakeOnLanCommand     { get; }
+    public ICommand GoToDevicesCommand   { get; }
+    public ICommand ControlDeviceCommand { get; }
+
+    public event EventHandler?        GoToDevicesRequested;
+    public event EventHandler<int>?   ControlDeviceRequested;
 
     public DashboardViewModel(DatabaseService db, ConnectionManager connMgr)
     {
@@ -34,8 +39,10 @@ public sealed class DashboardViewModel : BaseViewModel, IDisposable
         _connMgr.ConnectionChanged += (_, _) =>
             System.Windows.Application.Current?.Dispatcher.Invoke(UpdateConnectionStates);
 
-        RefreshCommand   = new AsyncRelayCommand(RefreshAllAsync);
-        WakeOnLanCommand = new AsyncRelayCommand<DeviceStatusInfo>(WakeOnLanTileAsync);
+        RefreshCommand       = new AsyncRelayCommand(RefreshAllAsync);
+        WakeOnLanCommand     = new AsyncRelayCommand<DeviceStatusInfo>(WakeOnLanTileAsync);
+        GoToDevicesCommand   = new RelayCommand(() => GoToDevicesRequested?.Invoke(this, EventArgs.Empty));
+        ControlDeviceCommand = new RelayCommand<DeviceStatusInfo>(t => { if (t != null) ControlDeviceRequested?.Invoke(this, t.Device.Id); }, t => t != null);
     }
 
     public void LoadData()

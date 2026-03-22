@@ -69,25 +69,22 @@ public partial class AddDeviceDialog : Window
         if (_editing == null && string.IsNullOrWhiteSpace(TxtName.Text))
             TxtName.Text = model;
 
-        // Auto-fill port if not already set
-        if (string.IsNullOrEmpty(TxtPort.Text))
+        // Always auto-fill port and connection type when a model is selected
+        var series = _db.GetSeriesForModel(model);
+        if (series != null)
         {
-            var series = _db.GetSeriesForModel(model);
-            if (series != null)
+            var cmds   = _db.GetCommandsBySeries(series);
+            var sample = cmds.FirstOrDefault(c => c.Port > 0) ?? cmds.FirstOrDefault();
+            if (sample != null && sample.Port > 0)
             {
-                var cmds = _db.GetCommandsBySeries(series);
-                var sample = cmds.FirstOrDefault();
-                if (sample != null && sample.Port > 0)
-                {
-                    TxtPort.Text = sample.Port.ToString();
-                    // Auto-select TCP when port is known
-                    RdoTcp.IsChecked = true;
-                }
-                else if (sample != null && sample.Port == 0)
-                {
-                    // No TCP port — default to Serial
-                    RdoSerial.IsChecked = true;
-                }
+                TxtPort.Text     = sample.Port.ToString();
+                RdoTcp.IsChecked = true;
+            }
+            else
+            {
+                // No TCP port defined for this series — default to Serial
+                TxtPort.Text        = string.Empty;
+                RdoSerial.IsChecked = true;
             }
         }
     }

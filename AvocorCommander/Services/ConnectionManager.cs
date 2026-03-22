@@ -19,7 +19,7 @@ public sealed class ConnectionManager : IDisposable
     public bool IsConnected(int deviceId)
     {
         lock (_lock)
-            return _active.TryGetValue(deviceId, out var svc) && svc.IsConnected;
+            return _active.ContainsKey(deviceId);
     }
 
     public IConnectionService? GetService(int deviceId)

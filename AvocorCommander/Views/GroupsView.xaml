@@ -4,8 +4,9 @@
              xmlns:core="clr-namespace:AvocorCommander.Core">
 
     <UserControl.Resources>
-        <core:BoolToVisibilityConverter x:Key="BoolToVis"/>
-        <core:BoolToVisibilityConverter x:Key="InvBoolToVis" Invert="True"/>
+        <core:BoolToVisibilityConverter  x:Key="BoolToVis"/>
+        <core:BoolToVisibilityConverter  x:Key="InvBoolToVis"  Invert="True"/>
+        <core:CountToVisibilityConverter x:Key="InvCountToVis" Invert="True"/>
     </UserControl.Resources>
 
     <DockPanel>
@@ -56,7 +57,7 @@
                                Foreground="{DynamicResource PlaceholderBrush}"
                                FontSize="13" TextAlignment="Center" TextWrapping="Wrap"
                                MaxWidth="220" HorizontalAlignment="Center" Margin="0,50,0,0"
-                               Visibility="{Binding Groups.Count, Converter={StaticResource InvBoolToVis}}"/>
+                               Visibility="{Binding Groups.Count, Converter={StaticResource InvCountToVis}}"/>
 
                     <ItemsControl ItemsSource="{Binding Groups}">
                         <ItemsControl.ItemTemplate>
@@ -170,7 +171,7 @@
                     <TextBlock Text="No devices in this group yet."
                                Foreground="{DynamicResource PlaceholderBrush}" FontSize="12"
                                Margin="0,4,0,0"
-                               Visibility="{Binding MemberDevices.Count, Converter={StaticResource InvBoolToVis}}"/>
+                               Visibility="{Binding MemberDevices.Count, Converter={StaticResource InvCountToVis}}"/>
 
                     <!-- Member list -->
                     <ItemsControl ItemsSource="{Binding MemberDevices}">

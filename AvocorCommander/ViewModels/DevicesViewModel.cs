@@ -41,17 +41,18 @@ public sealed class DevicesViewModel : BaseViewModel
 
     // ── Commands ─────────────────────────────────────────────────────────────
 
-    public ICommand AddDeviceCommand    { get; }
-    public ICommand EditDeviceCommand   { get; }
-    public ICommand DeleteDeviceCommand { get; }
-    public ICommand ConnectCommand      { get; }
-    public ICommand DisconnectCommand   { get; }
-    public ICommand ScanNetworkCommand  { get; }
-    public ICommand RefreshCommand      { get; }
+    public ICommand AddDeviceCommand     { get; }
+    public ICommand EditDeviceCommand    { get; }
+    public ICommand DeleteDeviceCommand  { get; }
+    public ICommand ConnectCommand       { get; }
+    public ICommand DisconnectCommand    { get; }
+    public ICommand ScanNetworkCommand   { get; }
+    public ICommand RefreshCommand       { get; }
     public ICommand ExportDevicesCommand { get; }
     public ICommand ImportDevicesCommand { get; }
-    public ICommand WakeOnLanCommand    { get; }
-    public ICommand ViewHistoryCommand  { get; }
+    public ICommand WakeOnLanCommand     { get; }
+    public ICommand ViewHistoryCommand   { get; }
+    public ICommand ControlDeviceCommand { get; }
 
     // ── Events raised for View ────────────────────────────────────────────────
 
@@ -59,6 +60,7 @@ public sealed class DevicesViewModel : BaseViewModel
     public event EventHandler<DeviceEntry>?        EditDeviceRequested;
     public event EventHandler?                     ScanNetworkRequested;
     public event EventHandler<string>?             ViewHistoryRequested;
+    public event EventHandler<int>?                ControlDeviceRequested;
 
     public DevicesViewModel(DatabaseService db, ConnectionManager connMgr)
     {
@@ -85,6 +87,7 @@ public sealed class DevicesViewModel : BaseViewModel
         ImportDevicesCommand = new RelayCommand(ImportDevices);
         WakeOnLanCommand     = new AsyncRelayCommand<DeviceEntry>(WakeOnLanAsync, d => d != null && !string.IsNullOrWhiteSpace(d.MacAddress));
         ViewHistoryCommand   = new RelayCommand<DeviceEntry>(d => { if (d != null) ViewHistoryRequested?.Invoke(this, d.DeviceName); }, d => d != null);
+        ControlDeviceCommand = new RelayCommand<DeviceEntry>(d => { if (d != null) ControlDeviceRequested?.Invoke(this, d.Id); }, d => d != null);
     }
 
     // ── Initialization ────────────────────────────────────────────────────────

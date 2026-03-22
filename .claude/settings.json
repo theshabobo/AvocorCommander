@@ -28,11 +28,32 @@
       "Bash(find C:/temp/CodedPrograms/AvocorCommander/V1.0 -name *.cs)",
       "Bash(start \"\" \"bin/Debug/net8.0-windows/AvocorCommander.exe\")",
       "Bash(\"c:/temp/CodedPrograms/AvocorCommander/V3.0/AvocorCommander/Views/MacroView.xaml\":*)",
-      "Bash(dotnet publish:*)"
+      "Bash(dotnet publish:*)",
+      "Bash(grep -E \"^d|\\\\.cs$|\\\\.xaml$\")",
+      "Bash(ls -lh /c/temp/CodedPrograms/AvocorCommander/V3.0/AvocorCommander/*.db /c/temp/CodedPrograms/AvocorCommander/V3.0/AvocorCommander/seed_database.js)",
+      "Bash(/c/temp/platform-tools/sqlite3 /c/temp/CodedPrograms/AvocorCommander/V3.0/AvocorCommander/AvocorCommander.db \"SELECT DISTINCT SeriesPattern, CommandCategory, CommandName FROM DeviceList ORDER BY SeriesPattern, CommandCategory, CommandName;\")",
+      "Bash(/c/temp/platform-tools/sqlite3 /c/temp/CodedPrograms/AvocorCommander/V3.0/AvocorCommander/AvocorCommander.db \"SELECT DISTINCT SeriesPattern, CommandCategory, CommandName FROM DeviceList WHERE SeriesPattern IN \\(''E-Group1'',''E-50'',''H/L/9200''\\) ORDER BY SeriesPattern, CommandCategory, CommandName;\")",
+      "Bash(/c/temp/platform-tools/sqlite3 /c/temp/CodedPrograms/AvocorCommander/V3.0/AvocorCommander/AvocorCommander.db \"SELECT CommandName, CommandCode, CommandFormat FROM DeviceList WHERE SeriesPattern=''B-Series'' LIMIT 10;\")",
+      "Bash(dir \"c:\\\\temp\\\\CodedPrograms\\\\Avocor\\\\AvocorCommander\\\\V3.0\\\\AvocorCommander\\\\bin\\\\Release\\\\net8.0-windows\\\\win-x64\\\\publish\")",
+      "Bash(dir \"c:\\\\temp\\\\CodedPrograms\\\\Avocor\\\\AvocorCommander\\\\V3.0\\\\AvocorCommander\\\\AvocorCommander.db\")",
+      "Bash(rd /s /q \"AvocorCommander\\\\bin\\\\Release\\\\net8.0-windows\\\\win-x64\\\\publish\")",
+      "Bash(sqlite3 \"c:\\\\temp\\\\CodedPrograms\\\\Avocor\\\\AvocorCommander\\\\V3.0\\\\AvocorCommander\\\\AvocorCommander.db\" \"SELECT CommandCategory, CommandName, CommandCode, Port, CommandFormat FROM DeviceList WHERE SeriesPattern = ''X-Series'' ORDER BY CommandCategory, CommandName;\")",
+      "Bash(sqlite3 AvocorCommander.db \"SELECT CommandCategory, CommandName, CommandCode FROM DeviceList WHERE Series = ''X-Series'' ORDER BY CommandCategory, CommandName;\")",
+      "Bash(sqlite3 AvocorCommander.db \".tables\")",
+      "Bash(sqlite3 AvocorCommander.db \"PRAGMA table_info\\(DeviceList\\);\")",
+      "Bash(sqlite3 AvocorCommander.db \"SELECT DISTINCT SeriesPattern FROM DeviceList;\")",
+      "Bash(sqlite3 AvocorCommander.db \"SELECT CommandCategory, CommandName, CommandCode FROM DeviceList WHERE SeriesPattern LIKE ''%X%'' ORDER BY CommandCategory, CommandName;\")",
+      "Bash(sqlite3 AvocorCommander.db \"SELECT Port, CommandFormat, Notes FROM DeviceList WHERE SeriesPattern = ''X-Series'' LIMIT 3;\")",
+      "Bash(sqlite3 AvocorCommander.db \"SELECT id, CommandCategory, CommandName, Port, CommandFormat, Notes FROM DeviceList WHERE SeriesPattern = ''X-Series'' ORDER BY CommandCategory, CommandName;\")",
+      "Bash(sqlite3 AvocorCommander.db \"SELECT CommandCategory, CommandName, CommandCode FROM DeviceList WHERE SeriesPattern = ''X-Series'' ORDER BY CommandCategory, CommandName;\")",
+      "Bash(grep -v \"//.*Shutdown\")",
+      "Bash(grep -v \"UpdateService\\\\|//.*Shutdown\")",
+      "Bash(taskkill /f /im AvocorCommander.exe)"
     ],
     "additionalDirectories": [
       "c:\\temp\\CodedPrograms\\AvocorCommander\\V2.0\\AvocorCommanderV2.0",
-      "C:\\Users\\LocalAdmin\\.claude\\projects\\c--temp-CodedPrograms-AvocorCommander-V3-0"
+      "C:\\Users\\LocalAdmin\\.claude\\projects\\c--temp-CodedPrograms-AvocorCommander-V3-0",
+      "c:\\Users\\LocalAdmin\\.claude\\projects\\c--temp-CodedPrograms-Avocor-AvocorCommander-V3-0\\memory"
     ]
   }
 }

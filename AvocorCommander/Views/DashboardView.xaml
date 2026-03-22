@@ -5,8 +5,9 @@
 
     <UserControl.Resources>
         <core:HexColorToBrushConverter  x:Key="HexBrush"/>
-        <core:BoolToVisibilityConverter x:Key="BoolToVis"/>
-        <core:BoolToVisibilityConverter x:Key="InvBoolToVis" Invert="True"/>
+        <core:BoolToVisibilityConverter  x:Key="BoolToVis"/>
+        <core:BoolToVisibilityConverter  x:Key="InvBoolToVis"  Invert="True"/>
+        <core:CountToVisibilityConverter x:Key="InvCountToVis" Invert="True"/>
     </UserControl.Resources>
 
     <DockPanel>
@@ -44,11 +45,20 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel>
 
-                <TextBlock Text="No devices found. Add devices in the Devices section."
-                           Foreground="{DynamicResource PlaceholderBrush}"
-                           FontSize="13" TextAlignment="Center" HorizontalAlignment="Center"
-                           Margin="0,80,0,0"
-                           Visibility="{Binding Tiles.Count, Converter={StaticResource InvBoolToVis}}"/>
+                <StackPanel HorizontalAlignment="Center" Margin="0,80,0,0"
+                            Visibility="{Binding Tiles.Count, Converter={StaticResource InvCountToVis}}">
+                    <TextBlock Text="No devices yet."
+                               Foreground="{DynamicResource PlaceholderBrush}"
+                               FontSize="15" FontWeight="SemiBold" TextAlignment="Center"/>
+                    <TextBlock Text="Add your first display to get started."
+                               Foreground="{DynamicResource PlaceholderBrush}"
+                               FontSize="12" TextAlignment="Center" Margin="0,6,0,0"/>
+                    <Button Content="＋  Add Devices"
+                            Style="{StaticResource PrimaryButton}"
+                            HorizontalAlignment="Center"
+                            Padding="20,8" Margin="0,16,0,0"
+                            Command="{Binding GoToDevicesCommand}"/>
+                </StackPanel>
 
                 <ItemsControl ItemsSource="{Binding Tiles}" Margin="16,14,16,14">
                     <ItemsControl.ItemsPanel>
@@ -148,6 +158,16 @@
                                                     RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                 CommandParameter="{Binding}"
                                                 Visibility="{Binding Device.MacAddress, Converter={StaticResource BoolToVis}}"/>
+
+                                        <!-- Control shortcut -->
+                                        <Button Content="▶ Control"
+                                                FontSize="9"
+                                                Style="{StaticResource PrimaryButton}"
+                                                Padding="6,2" Margin="0,3,0,0"
+                                                HorizontalAlignment="Left"
+                                                Command="{Binding DataContext.ControlDeviceCommand,
+                                                    RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"/>
 
                                     </StackPanel>
                                 </Grid>

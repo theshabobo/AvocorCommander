@@ -12,8 +12,9 @@
                 <SolidColorBrush Color="#E74C3C"/>
             </core:BoolToColorBrushConverter.FalseColor>
         </core:BoolToColorBrushConverter>
-        <core:BoolToVisibilityConverter x:Key="BoolToVis"/>
-        <core:BoolToVisibilityConverter x:Key="InvBoolToVis" Invert="True"/>
+        <core:BoolToVisibilityConverter   x:Key="BoolToVis"/>
+        <core:BoolToVisibilityConverter   x:Key="InvBoolToVis"   Invert="True"/>
+        <core:CountToVisibilityConverter  x:Key="InvCountToVis"  Invert="True"/>
     </UserControl.Resources>
 
     <DockPanel>
@@ -72,7 +73,7 @@
                        Margin="0,60,0,0"
                        TextWrapping="Wrap" MaxWidth="340"
                        Visibility="{Binding Devices.Count,
-                           Converter={StaticResource InvBoolToVis}}"/>
+                           Converter={StaticResource InvCountToVis}}"/>
 
             <ItemsControl ItemsSource="{Binding Devices}">
                 <ItemsControl.ItemsPanel>
@@ -111,6 +112,11 @@
                                                TextTrimming="CharacterEllipsis"/>
                                     <StackPanel Orientation="Horizontal"
                                                 HorizontalAlignment="Right">
+                                        <Button Content="▶" Style="{StaticResource IconButton}"
+                                                ToolTip="Open in Control"
+                                                Command="{Binding DataContext.ControlDeviceCommand,
+                                                    RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"/>
                                         <Button Content="⚡" Style="{StaticResource IconButton}"
                                                 ToolTip="Wake on LAN"
                                                 Command="{Binding DataContext.WakeOnLanCommand,

@@ -135,6 +135,13 @@ public sealed class ControlViewModel : BaseViewModel
                       ?? AvailableDevices.FirstOrDefault();
     }
 
+    /// <summary>Pre-select a device by ID after LoadData() has been called.</summary>
+    public void SelectDevice(int deviceId)
+    {
+        var device = AvailableDevices.FirstOrDefault(d => d.Id == deviceId);
+        if (device != null) SelectedDevice = device;
+    }
+
     // ── Category / command refresh ────────────────────────────────────────────
 
     private void RefreshCategories()

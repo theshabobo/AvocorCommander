@@ -4,8 +4,9 @@
              xmlns:core="clr-namespace:AvocorCommander.Core">
 
     <UserControl.Resources>
-        <core:BoolToVisibilityConverter x:Key="BoolToVis"/>
-        <core:BoolToVisibilityConverter x:Key="InvBoolToVis" Invert="True"/>
+        <core:BoolToVisibilityConverter  x:Key="BoolToVis"/>
+        <core:BoolToVisibilityConverter  x:Key="InvBoolToVis"  Invert="True"/>
+        <core:CountToVisibilityConverter x:Key="InvCountToVis" Invert="True"/>
     </UserControl.Resources>
 
     <DockPanel>
@@ -88,7 +89,7 @@
                                Foreground="{DynamicResource PlaceholderBrush}"
                                FontSize="13" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="220"
                                HorizontalAlignment="Center" Margin="0,50,0,0"
-                               Visibility="{Binding Macros.Count, Converter={StaticResource InvBoolToVis}}"/>
+                               Visibility="{Binding Macros.Count, Converter={StaticResource InvCountToVis}}"/>
                     <ItemsControl ItemsSource="{Binding Macros}" x:Name="MacroList">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
