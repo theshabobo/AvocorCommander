@@ -39,6 +39,7 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        (MainWindow?.DataContext as IDisposable)?.Dispose();
         _trayIcon?.Dispose();
         base.OnExit(e);
     }

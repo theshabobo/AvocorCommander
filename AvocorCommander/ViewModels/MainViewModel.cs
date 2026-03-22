@@ -30,10 +30,11 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
     public AboutViewModel     AboutVM     { get; }
     public DashboardViewModel DashboardVM { get; }
     public GroupsViewModel    GroupsVM    { get; }
+    public PanelViewModel     PanelVM     { get; }
 
     // ── Navigation ────────────────────────────────────────────────────────────
 
-    private string _currentSection = "Devices";
+    private string _currentSection = "Dashboard";
     public string CurrentSection
     {
         get => _currentSection;
@@ -48,7 +49,6 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
     public ICommand NavDevicesCommand   { get; }
     public ICommand NavControlCommand   { get; }
     public ICommand NavRemoteCommand    { get; }
-    public ICommand NavStatusCommand    { get; }
     public ICommand NavSchedulerCommand { get; }
     public ICommand NavAuditLogCommand  { get; }
     public ICommand NavMacroCommand     { get; }
@@ -56,6 +56,7 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
     public ICommand NavAboutCommand     { get; }
     public ICommand NavDashboardCommand { get; }
     public ICommand NavGroupsCommand    { get; }
+    public ICommand NavPanelCommand     { get; }
     public ICommand CheckForUpdatesCommand { get; }
     public ICommand DismissBannerCommand   { get; }
 
@@ -129,7 +130,6 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
         "Devices"   => DevicesVM,
         "Control"   => ControlVM,
         "Remote"    => RemoteVM,
-        "Status"    => StatusVM,
         "Scheduler" => SchedulerVM,
         "AuditLog"  => AuditLogVM,
         "Macros"    => MacroVM,
@@ -137,6 +137,7 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
         "About"     => AboutVM,
         "Dashboard" => DashboardVM,
         "Groups"    => GroupsVM,
+        "Panel"     => PanelVM,
         _           => DevicesVM,
     };
 
@@ -167,6 +168,7 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
         AboutVM     = new AboutViewModel();
         DashboardVM = new DashboardViewModel(Database, Connections);
         GroupsVM    = new GroupsViewModel(Database, Connections);
+        PanelVM     = new PanelViewModel(Database, Connections);
 
         // Scheduler + MacroRunner → AuditLog live feed
         Scheduler.EntryLogged   += (_, _) =>
@@ -181,11 +183,29 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
             CurrentSection = "AuditLog";
         };
 
+        // DevicesVM → Control shortcut
+        DevicesVM.ControlDeviceRequested += (_, deviceId) =>
+        {
+            ControlVM.LoadData();
+            ControlVM.SelectDevice(deviceId);
+            CurrentSection = "Control";
+        };
+
+        // DashboardVM → Devices onboarding CTA
+        DashboardVM.GoToDevicesRequested += (_, _) => CurrentSection = "Devices";
+
+        // DashboardVM → Control shortcut
+        DashboardVM.ControlDeviceRequested += (_, deviceId) =>
+        {
+            ControlVM.LoadData();
+            ControlVM.SelectDevice(deviceId);
+            CurrentSection = "Control";
+        };
+
         // Wire events from section VMs to dialogs (raised in MainWindow code-behind)
         NavDevicesCommand   = new RelayCommand(() => CurrentSection = "Devices");
         NavControlCommand   = new RelayCommand(() => CurrentSection = "Control");
         NavRemoteCommand    = new RelayCommand(() => CurrentSection = "Remote");
-        NavStatusCommand    = new RelayCommand(() => CurrentSection = "Status");
         NavSchedulerCommand = new RelayCommand(() => CurrentSection = "Scheduler");
         NavAuditLogCommand  = new RelayCommand(() => CurrentSection = "AuditLog");
         NavMacroCommand     = new RelayCommand(() => CurrentSection = "Macros");
@@ -193,6 +213,7 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
         NavAboutCommand     = new RelayCommand(() => CurrentSection = "About");
         NavDashboardCommand = new RelayCommand(() => CurrentSection = "Dashboard");
         NavGroupsCommand    = new RelayCommand(() => CurrentSection = "Groups");
+        NavPanelCommand     = new RelayCommand(() => CurrentSection = "Panel");
 
         CheckForUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync, () => !IsUpdating);
         DismissBannerCommand   = new RelayCommand(() =>
@@ -297,6 +318,7 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
     public void Initialize()
     {
         DevicesVM.LoadDevices();
+        DashboardVM.LoadData();
         DatabaseVM.Initialize();
         // Load other sections lazily when first navigated to
 
@@ -324,9 +346,6 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
             case "Remote":
                 RemoteVM.LoadDevices();
                 break;
-            case "Status":
-                StatusVM.LoadDevices();
-                break;
             case "Scheduler":
                 SchedulerVM.LoadRules();
                 break;
@@ -345,6 +364,9 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
             case "Groups":
                 GroupsVM.LoadData();
                 break;
+            case "Panel":
+                PanelVM.LoadData();
+                break;
         }
         GlobalStatus = $"Section: {section}";
     }
@@ -352,6 +374,7 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
     public void Dispose()
     {
         DashboardVM.Dispose();
+        PanelVM.Dispose();
         StatusVM.Dispose();
         Scheduler.Dispose();
         Connections.Dispose();

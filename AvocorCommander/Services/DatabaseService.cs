@@ -183,6 +183,44 @@ public sealed class DatabaseService : IDisposable
                 DelayAfterMs INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(MacroId) REFERENCES Macros(id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS PanelScenes (
+                Id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                Name        TEXT    NOT NULL DEFAULT 'Scene',
+                Description TEXT    NOT NULL DEFAULT '',
+                SortOrder   INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS PanelPages (
+                Id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                SceneId   INTEGER NOT NULL,
+                Name      TEXT    NOT NULL DEFAULT 'Page',
+                SortOrder INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(SceneId) REFERENCES PanelScenes(Id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS PanelButtons (
+                Id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                PageId     INTEGER,
+                SceneId    INTEGER,
+                ButtonType TEXT    NOT NULL DEFAULT 'grid',
+                Label      TEXT    NOT NULL DEFAULT '',
+                Icon       TEXT    NOT NULL DEFAULT '▶',
+                Color      TEXT    NOT NULL DEFAULT '#3A7BD5',
+                IsToggle   INTEGER NOT NULL DEFAULT 0,
+                GridRow    INTEGER NOT NULL DEFAULT 0,
+                GridCol    INTEGER NOT NULL DEFAULT 0,
+                SortOrder  INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS PanelButtonActions (
+                Id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                ButtonId      INTEGER NOT NULL,
+                Phase         INTEGER NOT NULL DEFAULT 0,
+                DeviceId      INTEGER NOT NULL,
+                DeviceName    TEXT    NOT NULL DEFAULT '',
+                CommandCode   TEXT    NOT NULL DEFAULT '',
+                CommandName   TEXT    NOT NULL DEFAULT '',
+                CommandFormat TEXT    NOT NULL DEFAULT 'HEX',
+                SortOrder     INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(ButtonId) REFERENCES PanelButtons(Id) ON DELETE CASCADE
+            );
             """;
         cmd.ExecuteNonQuery();
     }
@@ -309,6 +347,34 @@ public sealed class DatabaseService : IDisposable
             ORDER  BY CommandCategory, CommandName;
             """;
         cmd.Parameters.AddWithValue("$series", seriesPattern);
+        return ReadCommands(cmd);
+    }
+
+    public List<string> GetCategoriesBySeries(string seriesPattern)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = "SELECT DISTINCT CommandCategory FROM DeviceList WHERE SeriesPattern=$s ORDER BY CommandCategory;";
+        cmd.Parameters.AddWithValue("$s", seriesPattern);
+        var list = new List<string>();
+        using var rdr = cmd.ExecuteReader();
+        while (rdr.Read()) list.Add(rdr.GetString(0));
+        return list;
+    }
+
+    public List<CommandEntry> GetCommandsBySeriesAndCategory(string seriesPattern, string category)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT id, SeriesPattern, CommandCategory, CommandName,
+                   CommandCode, COALESCE(Notes,''), Port, CommandFormat
+            FROM   DeviceList
+            WHERE  SeriesPattern=$s AND CommandCategory=$cat
+            ORDER  BY CommandName;
+            """;
+        cmd.Parameters.AddWithValue("$s",   seriesPattern);
+        cmd.Parameters.AddWithValue("$cat", category);
         return ReadCommands(cmd);
     }
 
@@ -948,6 +1014,256 @@ public sealed class DatabaseService : IDisposable
             ins.Parameters.AddWithValue("$ord", order++);
             ins.Parameters.AddWithValue("$cid", s.CommandId);
             ins.Parameters.AddWithValue("$del", s.DelayAfterMs);
+            ins.ExecuteNonQuery();
+        }
+        tx.Commit();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  PANEL
+    // ══════════════════════════════════════════════════════════════════════════
+
+    public List<PanelScene> GetAllPanelScenes()
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = "SELECT Id, Name, Description, SortOrder FROM PanelScenes ORDER BY SortOrder, Id;";
+        var list = new List<PanelScene>();
+        using var rdr = cmd.ExecuteReader();
+        while (rdr.Read())
+            list.Add(new PanelScene { Id = rdr.GetInt32(0), Name = rdr.GetString(1), Description = rdr.GetString(2), SortOrder = rdr.GetInt32(3) });
+        return list;
+    }
+
+    public int InsertPanelScene(PanelScene s)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = "INSERT INTO PanelScenes (Name, Description, SortOrder) VALUES ($n,$d,$so); SELECT last_insert_rowid();";
+        cmd.Parameters.AddWithValue("$n",  s.Name);
+        cmd.Parameters.AddWithValue("$d",  s.Description);
+        cmd.Parameters.AddWithValue("$so", s.SortOrder);
+        return System.Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    public void UpdatePanelScene(PanelScene s)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = "UPDATE PanelScenes SET Name=$n, Description=$d, SortOrder=$so WHERE Id=$id;";
+        cmd.Parameters.AddWithValue("$id", s.Id);
+        cmd.Parameters.AddWithValue("$n",  s.Name);
+        cmd.Parameters.AddWithValue("$d",  s.Description);
+        cmd.Parameters.AddWithValue("$so", s.SortOrder);
+        cmd.ExecuteNonQuery();
+    }
+
+    public void DeletePanelScene(int id)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM PanelScenes WHERE Id=$id;";
+        cmd.Parameters.AddWithValue("$id", id);
+        cmd.ExecuteNonQuery();
+    }
+
+    public List<PanelPage> GetPagesForScene(int sceneId)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = "SELECT Id, SceneId, Name, SortOrder FROM PanelPages WHERE SceneId=$sid ORDER BY SortOrder, Id;";
+        cmd.Parameters.AddWithValue("$sid", sceneId);
+        var list = new List<PanelPage>();
+        using var rdr = cmd.ExecuteReader();
+        while (rdr.Read())
+            list.Add(new PanelPage { Id = rdr.GetInt32(0), SceneId = rdr.GetInt32(1), Name = rdr.GetString(2), SortOrder = rdr.GetInt32(3) });
+        return list;
+    }
+
+    public int InsertPanelPage(PanelPage p)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = "INSERT INTO PanelPages (SceneId, Name, SortOrder) VALUES ($sid,$n,$so); SELECT last_insert_rowid();";
+        cmd.Parameters.AddWithValue("$sid", p.SceneId);
+        cmd.Parameters.AddWithValue("$n",   p.Name);
+        cmd.Parameters.AddWithValue("$so",  p.SortOrder);
+        return System.Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    public void UpdatePanelPage(PanelPage p)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = "UPDATE PanelPages SET Name=$n, SortOrder=$so WHERE Id=$id;";
+        cmd.Parameters.AddWithValue("$id", p.Id);
+        cmd.Parameters.AddWithValue("$n",  p.Name);
+        cmd.Parameters.AddWithValue("$so", p.SortOrder);
+        cmd.ExecuteNonQuery();
+    }
+
+    public void DeletePanelPage(int id)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM PanelPages WHERE Id=$id;";
+        cmd.Parameters.AddWithValue("$id", id);
+        cmd.ExecuteNonQuery();
+    }
+
+    public List<PanelButton> GetGridButtonsForPage(int pageId)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT Id, PageId, SceneId, ButtonType, Label, Icon, Color, IsToggle, GridRow, GridCol, SortOrder
+            FROM   PanelButtons
+            WHERE  PageId=$pid AND ButtonType='grid'
+            ORDER  BY GridRow, GridCol;
+            """;
+        cmd.Parameters.AddWithValue("$pid", pageId);
+        return ReadPanelButtons(cmd);
+    }
+
+    public List<PanelButton> GetBottomButtonsForScene(int sceneId)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT Id, PageId, SceneId, ButtonType, Label, Icon, Color, IsToggle, GridRow, GridCol, SortOrder
+            FROM   PanelButtons
+            WHERE  SceneId=$sid AND ButtonType='bottom'
+            ORDER  BY SortOrder, Id;
+            """;
+        cmd.Parameters.AddWithValue("$sid", sceneId);
+        return ReadPanelButtons(cmd);
+    }
+
+    private static List<PanelButton> ReadPanelButtons(SqliteCommand cmd)
+    {
+        var list = new List<PanelButton>();
+        using var rdr = cmd.ExecuteReader();
+        while (rdr.Read())
+            list.Add(new PanelButton
+            {
+                Id         = rdr.GetInt32(0),
+                PageId     = rdr.IsDBNull(1) ? null : rdr.GetInt32(1),
+                SceneId    = rdr.IsDBNull(2) ? null : rdr.GetInt32(2),
+                ButtonType = rdr.GetString(3),
+                Label      = rdr.GetString(4),
+                Icon       = rdr.GetString(5),
+                Color      = rdr.GetString(6),
+                IsToggle   = rdr.GetInt32(7) == 1,
+                GridRow    = rdr.GetInt32(8),
+                GridCol    = rdr.GetInt32(9),
+                SortOrder  = rdr.GetInt32(10),
+            });
+        return list;
+    }
+
+    public int InsertPanelButton(PanelButton b)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO PanelButtons (PageId, SceneId, ButtonType, Label, Icon, Color, IsToggle, GridRow, GridCol, SortOrder)
+            VALUES ($pid,$sid,$bt,$lbl,$icon,$col,$tog,$row,$col2,$so);
+            SELECT last_insert_rowid();
+            """;
+        cmd.Parameters.AddWithValue("$pid",  b.PageId.HasValue  ? b.PageId  : DBNull.Value);
+        cmd.Parameters.AddWithValue("$sid",  b.SceneId.HasValue ? b.SceneId : DBNull.Value);
+        cmd.Parameters.AddWithValue("$bt",   b.ButtonType);
+        cmd.Parameters.AddWithValue("$lbl",  b.Label);
+        cmd.Parameters.AddWithValue("$icon", b.Icon);
+        cmd.Parameters.AddWithValue("$col",  b.Color);
+        cmd.Parameters.AddWithValue("$tog",  b.IsToggle ? 1 : 0);
+        cmd.Parameters.AddWithValue("$row",  b.GridRow);
+        cmd.Parameters.AddWithValue("$col2", b.GridCol);
+        cmd.Parameters.AddWithValue("$so",   b.SortOrder);
+        return System.Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    public void UpdatePanelButton(PanelButton b)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = """
+            UPDATE PanelButtons
+            SET Label=$lbl, Icon=$icon, Color=$col, IsToggle=$tog, SortOrder=$so
+            WHERE Id=$id;
+            """;
+        cmd.Parameters.AddWithValue("$id",   b.Id);
+        cmd.Parameters.AddWithValue("$lbl",  b.Label);
+        cmd.Parameters.AddWithValue("$icon", b.Icon);
+        cmd.Parameters.AddWithValue("$col",  b.Color);
+        cmd.Parameters.AddWithValue("$tog",  b.IsToggle ? 1 : 0);
+        cmd.Parameters.AddWithValue("$so",   b.SortOrder);
+        cmd.ExecuteNonQuery();
+    }
+
+    public void DeletePanelButton(int id)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM PanelButtons WHERE Id=$id;";
+        cmd.Parameters.AddWithValue("$id", id);
+        cmd.ExecuteNonQuery();
+    }
+
+    public List<PanelButtonAction> GetActionsForButton(int buttonId)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT Id, ButtonId, Phase, DeviceId, DeviceName, CommandCode, CommandName, CommandFormat, SortOrder
+            FROM   PanelButtonActions
+            WHERE  ButtonId=$bid
+            ORDER  BY Phase, SortOrder, Id;
+            """;
+        cmd.Parameters.AddWithValue("$bid", buttonId);
+        var list = new List<PanelButtonAction>();
+        using var rdr = cmd.ExecuteReader();
+        while (rdr.Read())
+            list.Add(new PanelButtonAction
+            {
+                Id            = rdr.GetInt32(0),
+                ButtonId      = rdr.GetInt32(1),
+                Phase         = rdr.GetInt32(2),
+                DeviceId      = rdr.GetInt32(3),
+                DeviceName    = rdr.GetString(4),
+                CommandCode   = rdr.GetString(5),
+                CommandName   = rdr.GetString(6),
+                CommandFormat = rdr.GetString(7),
+                SortOrder     = rdr.GetInt32(8),
+            });
+        return list;
+    }
+
+    public void SetActionsForButton(int buttonId, IEnumerable<PanelButtonAction> actions)
+    {
+        using var conn = OpenConnection();
+        using var tx   = conn.BeginTransaction();
+        var del = conn.CreateCommand();
+        del.CommandText = "DELETE FROM PanelButtonActions WHERE ButtonId=$bid;";
+        del.Parameters.AddWithValue("$bid", buttonId);
+        del.ExecuteNonQuery();
+
+        int order = 0;
+        foreach (var a in actions)
+        {
+            var ins = conn.CreateCommand();
+            ins.CommandText = """
+                INSERT INTO PanelButtonActions (ButtonId, Phase, DeviceId, DeviceName, CommandCode, CommandName, CommandFormat, SortOrder)
+                VALUES ($bid,$ph,$did,$dn,$cc,$cn,$cf,$so);
+                """;
+            ins.Parameters.AddWithValue("$bid", buttonId);
+            ins.Parameters.AddWithValue("$ph",  a.Phase);
+            ins.Parameters.AddWithValue("$did", a.DeviceId);
+            ins.Parameters.AddWithValue("$dn",  a.DeviceName);
+            ins.Parameters.AddWithValue("$cc",  a.CommandCode);
+            ins.Parameters.AddWithValue("$cn",  a.CommandName);
+            ins.Parameters.AddWithValue("$cf",  a.CommandFormat);
+            ins.Parameters.AddWithValue("$so",  order++);
             ins.ExecuteNonQuery();
         }
         tx.Commit();

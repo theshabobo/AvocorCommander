@@ -49,6 +49,9 @@
         <DataTemplate DataType="{x:Type vm:GroupsViewModel}">
             <views:GroupsView/>
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:PanelViewModel}">
+            <views:PanelView/>
+        </DataTemplate>
 
         <core:EqualsToBoolConverter     x:Key="EqBool"/>
         <core:BoolToVisibilityConverter x:Key="BoolToVis"/>
@@ -56,14 +59,15 @@
 
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="200" MinWidth="180" MaxWidth="240"/>
+            <ColumnDefinition x:Name="SidebarColumn" Width="200" MinWidth="180" MaxWidth="240"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
         <!-- ════════════════════════════════════════════════════════════════════
              LEFT SIDEBAR
              ════════════════════════════════════════════════════════════════════ -->
-        <Border Grid.Column="0"
+        <Border x:Name="SidebarBorder"
+                Grid.Column="0"
                 Background="{DynamicResource SidebarBrush}"
                 BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,0,1,0">
@@ -181,24 +185,6 @@
                         </StackPanel>
                     </Button>
 
-                    <Button Command="{Binding NavStatusCommand}">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding CurrentSection}" Value="Status">
-                                        <Setter Property="Background"  Value="{DynamicResource NavActiveBackBrush}"/>
-                                        <Setter Property="Foreground"  Value="{DynamicResource NavActiveForeBrush}"/>
-                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="◉" FontSize="12" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Live Status" FontSize="13" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-
                     <Button Command="{Binding NavSchedulerCommand}">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
@@ -251,6 +237,25 @@
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#9636;" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <TextBlock Text="Macros" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Panel -->
+                    <Button Command="{Binding NavPanelCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentSection}" Value="Panel">
+                                        <Setter Property="Background"  Value="{DynamicResource NavActiveBackBrush}"/>
+                                        <Setter Property="Foreground"  Value="{DynamicResource NavActiveForeBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="⊞" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Panel" FontSize="13" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
 
