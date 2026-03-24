@@ -155,7 +155,7 @@ public class UpdateService
         await DownloadAssetAsync(info.AssetUrl, tmpExePath, progress);
 
         if (!string.IsNullOrEmpty(info.DbAssetUrl))
-            await DownloadAssetAsync(info.DbAssetUrl, tmpDbPath, null);
+            await DownloadAssetAsync(info.DbAssetUrl, tmpDbPath, null, minSize: 1024);
 
         // Batch script: wait for this process to exit, swap exe, drop db update file, restart
         var batPath  = Path.Combine(Path.GetTempPath(), "avocor_update.bat");
@@ -181,7 +181,7 @@ public class UpdateService
     }
 
     private static async Task DownloadAssetAsync(string assetApiUrl, string destPath,
-                                                  IProgress<int>? progress)
+                                                  IProgress<int>? progress, long minSize = 1_000_000)
     {
         // ── Step 1: Resolve the CDN pre-signed URL ────────────────────────────
         // GitHub private release assets respond with a 302 redirect to a
@@ -230,9 +230,9 @@ public class UpdateService
         }
 
         // Guard: reject suspiciously small files
-        if (done < 1_000_000)
+        if (done < minSize)
             throw new InvalidOperationException(
-                $"Downloaded file is too small ({done:N0} bytes) — expected > 1 MB. " +
-                "Check that the correct exe was attached to the GitHub release.");
+                $"Downloaded file is too small ({done:N0} bytes) — expected > {minSize:N0} bytes. " +
+                "Check that the correct file was attached to the GitHub release.");
     }
 }
