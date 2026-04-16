@@ -135,6 +135,52 @@ public sealed class DatabaseService : IDisposable
             catch (SqliteException) { }
         }
 
+        // Migrate Models — add per-model RS232 baud rate
+        try
+        {
+            cmd.CommandText = "ALTER TABLE Models ADD COLUMN BaudRate INTEGER DEFAULT 9600;";
+            cmd.ExecuteNonQuery();
+        }
+        catch (SqliteException) { /* column already exists */ }
+
+        // Migrate MacroSteps — add StepType + PromptText for "pause for user" steps
+        foreach (var (col, def) in new[]
+        {
+            ("StepType",   "TEXT DEFAULT 'command'"),
+            ("PromptText", "TEXT DEFAULT ''"),
+        })
+        {
+            try
+            {
+                cmd.CommandText = $"ALTER TABLE MacroSteps ADD COLUMN {col} {def};";
+                cmd.ExecuteNonQuery();
+            }
+            catch (SqliteException) { /* column already exists */ }
+        }
+
+        // One-time backfill: set BaudRate per SeriesPattern (only rows still at 0 or default 9600
+        // which haven't been explicitly set — safe to re-run because NULL/0 rows get corrected
+        // and previously-correct rows stay untouched where BaudRate already matches).
+        foreach (var (series, baud) in new[]
+        {
+            ("A-Series", 38400),
+            ("K-Series", 38400),
+            ("X-Series", 38400),
+            ("B-Series", 115200),
+            ("E-50",     115200),
+            ("AVE-9200", 9600),
+            ("S-Series", 9600),
+            ("H-Series", 9600),
+        })
+        {
+            cmd.Parameters.Clear();
+            cmd.CommandText = "UPDATE Models SET BaudRate=$b WHERE SeriesPattern=$s AND (BaudRate IS NULL OR BaudRate=0 OR BaudRate=9600);";
+            cmd.Parameters.AddWithValue("$b", baud);
+            cmd.Parameters.AddWithValue("$s", series);
+            cmd.ExecuteNonQuery();
+        }
+        cmd.Parameters.Clear();
+
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS Groups (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,7 +203,9 @@ public sealed class DatabaseService : IDisposable
                 ScheduleTime TEXT    NOT NULL,
                 Recurrence   TEXT    NOT NULL DEFAULT 'Daily',
                 IsEnabled    INTEGER NOT NULL DEFAULT 1,
-                Notes        TEXT    DEFAULT ''
+                Notes        TEXT    DEFAULT '',
+                LastFiredAt  TEXT    DEFAULT '',
+                LastResult   TEXT    DEFAULT ''
             );
             CREATE TABLE IF NOT EXISTS CommandLog (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -181,7 +229,16 @@ public sealed class DatabaseService : IDisposable
                 StepOrder    INTEGER NOT NULL DEFAULT 0,
                 CommandId    INTEGER NOT NULL,
                 DelayAfterMs INTEGER NOT NULL DEFAULT 0,
+                StepType     TEXT    NOT NULL DEFAULT 'command',
+                PromptText   TEXT    NOT NULL DEFAULT '',
                 FOREIGN KEY(MacroId) REFERENCES Macros(id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS OUITable (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                OUIPrefix     TEXT    NOT NULL UNIQUE,
+                SeriesLabel   TEXT    DEFAULT '',
+                SeriesPattern TEXT    NOT NULL,
+                Notes         TEXT    DEFAULT ''
             );
             CREATE TABLE IF NOT EXISTS PanelScenes (
                 Id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -223,6 +280,29 @@ public sealed class DatabaseService : IDisposable
             );
             """;
         cmd.ExecuteNonQuery();
+
+        // Seed known Avocor OUI prefixes. INSERT OR IGNORE keeps the table
+        // stable across launches (won't overwrite user-added prefixes).
+        foreach (var (prefix, label, series) in new[]
+        {
+            ("38:54:39", "Avocor S-Series (AVS-xx10)", "S-Series"),
+            ("1C:D1:D7", "Avocor B-Series (AVB-xx10)", "B-Series"),
+            ("44:37:0B", "Avocor H-Series (AVH-xx20)", "H-Series"),
+        })
+        {
+            cmd.Parameters.Clear();
+            cmd.CommandText = "INSERT OR IGNORE INTO OUITable (OUIPrefix, SeriesLabel, SeriesPattern, Notes) VALUES ($p,$l,$s,'');";
+            cmd.Parameters.AddWithValue("$p", prefix);
+            cmd.Parameters.AddWithValue("$l", label);
+            cmd.Parameters.AddWithValue("$s", series);
+            cmd.ExecuteNonQuery();
+        }
+
+        // One-time label correction: a prior build mislabeled the H-Series OUI as xx10.
+        cmd.Parameters.Clear();
+        cmd.CommandText = "UPDATE OUITable SET SeriesLabel='Avocor H-Series (AVH-xx20)' WHERE OUIPrefix='44:37:0B' AND SeriesLabel='Avocor H-Series (AVH-xx10)';";
+        cmd.ExecuteNonQuery();
+        cmd.Parameters.Clear();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -469,14 +549,20 @@ public sealed class DatabaseService : IDisposable
         using var conn = OpenConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT id, ModelNumber, SeriesPattern
+            SELECT id, ModelNumber, SeriesPattern, COALESCE(BaudRate, 9600)
             FROM   Models
             ORDER  BY ModelNumber;
             """;
         var list = new List<ModelEntry>();
         using var rdr = cmd.ExecuteReader();
         while (rdr.Read())
-            list.Add(new ModelEntry { Id = rdr.GetInt32(0), ModelNumber = rdr.GetString(1), SeriesPattern = rdr.GetString(2) });
+            list.Add(new ModelEntry
+            {
+                Id            = rdr.GetInt32(0),
+                ModelNumber   = rdr.GetString(1),
+                SeriesPattern = rdr.GetString(2),
+                BaudRate      = rdr.GetInt32(3),
+            });
         return list;
     }
 
@@ -490,13 +576,30 @@ public sealed class DatabaseService : IDisposable
         return result as string;
     }
 
+    /// <summary>
+    /// Returns the default RS232 baud rate for the given model, from the Models table.
+    /// Falls back to 9600 if the model isn't found or BaudRate is null/0.
+    /// </summary>
+    public int GetBaudRateForModel(string modelNumber)
+    {
+        using var conn = OpenConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = "SELECT COALESCE(BaudRate, 9600) FROM Models WHERE ModelNumber=$m LIMIT 1;";
+        cmd.Parameters.AddWithValue("$m", modelNumber);
+        var result = cmd.ExecuteScalar();
+        if (result is long l && l > 0)  return (int)l;
+        if (result is int  i && i > 0)  return i;
+        return 9600;
+    }
+
     public void InsertModel(ModelEntry m)
     {
         using var conn = OpenConnection();
         using var cmd  = conn.CreateCommand();
-        cmd.CommandText = "INSERT OR IGNORE INTO Models (ModelNumber, SeriesPattern) VALUES ($m, $s);";
+        cmd.CommandText = "INSERT OR IGNORE INTO Models (ModelNumber, SeriesPattern, BaudRate) VALUES ($m, $s, $b);";
         cmd.Parameters.AddWithValue("$m", m.ModelNumber);
         cmd.Parameters.AddWithValue("$s", m.SeriesPattern);
+        cmd.Parameters.AddWithValue("$b", m.BaudRate);
         cmd.ExecuteNonQuery();
     }
 
@@ -504,9 +607,10 @@ public sealed class DatabaseService : IDisposable
     {
         using var conn = OpenConnection();
         using var cmd  = conn.CreateCommand();
-        cmd.CommandText = "UPDATE Models SET ModelNumber=$m, SeriesPattern=$s WHERE id=$id;";
+        cmd.CommandText = "UPDATE Models SET ModelNumber=$m, SeriesPattern=$s, BaudRate=$b WHERE id=$id;";
         cmd.Parameters.AddWithValue("$id", m.Id);
         cmd.Parameters.AddWithValue("$m",  m.ModelNumber);
+        cmd.Parameters.AddWithValue("$b",  m.BaudRate);
         cmd.Parameters.AddWithValue("$s",  m.SeriesPattern);
         cmd.ExecuteNonQuery();
     }
@@ -943,7 +1047,8 @@ public sealed class DatabaseService : IDisposable
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             SELECT ms.id, ms.MacroId, ms.StepOrder, ms.CommandId, ms.DelayAfterMs,
-                   COALESCE(dl.CommandName,''), COALESCE(dl.SeriesPattern,'')
+                   COALESCE(dl.CommandName,''), COALESCE(dl.SeriesPattern,''),
+                   COALESCE(ms.StepType,'command'), COALESCE(ms.PromptText,'')
             FROM   MacroSteps ms
             LEFT   JOIN DeviceList dl ON dl.id = ms.CommandId
             WHERE  ms.MacroId = $mid
@@ -962,6 +1067,8 @@ public sealed class DatabaseService : IDisposable
                 DelayAfterMs  = rdr.GetInt32(4),
                 CommandName   = rdr.GetString(5),
                 SeriesPattern = rdr.GetString(6),
+                StepType      = rdr.GetString(7),
+                PromptText    = rdr.GetString(8),
             });
         return list;
     }
@@ -1009,261 +1116,16 @@ public sealed class DatabaseService : IDisposable
         foreach (var s in steps)
         {
             var ins = conn.CreateCommand();
-            ins.CommandText = "INSERT INTO MacroSteps (MacroId, StepOrder, CommandId, DelayAfterMs) VALUES ($mid,$ord,$cid,$del);";
-            ins.Parameters.AddWithValue("$mid", macroId);
-            ins.Parameters.AddWithValue("$ord", order++);
-            ins.Parameters.AddWithValue("$cid", s.CommandId);
-            ins.Parameters.AddWithValue("$del", s.DelayAfterMs);
-            ins.ExecuteNonQuery();
-        }
-        tx.Commit();
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    //  PANEL
-    // ══════════════════════════════════════════════════════════════════════════
-
-    public List<PanelScene> GetAllPanelScenes()
-    {
-        using var conn = OpenConnection();
-        using var cmd  = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Name, Description, SortOrder FROM PanelScenes ORDER BY SortOrder, Id;";
-        var list = new List<PanelScene>();
-        using var rdr = cmd.ExecuteReader();
-        while (rdr.Read())
-            list.Add(new PanelScene { Id = rdr.GetInt32(0), Name = rdr.GetString(1), Description = rdr.GetString(2), SortOrder = rdr.GetInt32(3) });
-        return list;
-    }
-
-    public int InsertPanelScene(PanelScene s)
-    {
-        using var conn = OpenConnection();
-        using var cmd  = conn.CreateCommand();
-        cmd.CommandText = "INSERT INTO PanelScenes (Name, Description, SortOrder) VALUES ($n,$d,$so); SELECT last_insert_rowid();";
-        cmd.Parameters.AddWithValue("$n",  s.Name);
-        cmd.Parameters.AddWithValue("$d",  s.Description);
-        cmd.Parameters.AddWithValue("$so", s.SortOrder);
-        return System.Convert.ToInt32(cmd.ExecuteScalar());
-    }
-
-    public void UpdatePanelScene(PanelScene s)
-    {
-        using var conn = OpenConnection();
-        using var cmd  = conn.CreateCommand();
-        cmd.CommandText = "UPDATE PanelScenes SET Name=$n, Description=$d, SortOrder=$so WHERE Id=$id;";
-        cmd.Parameters.AddWithValue("$id", s.Id);
-        cmd.Parameters.AddWithValue("$n",  s.Name);
-        cmd.Parameters.AddWithValue("$d",  s.Description);
-        cmd.Parameters.AddWithValue("$so", s.SortOrder);
-        cmd.ExecuteNonQuery();
-    }
-
-    public void DeletePanelScene(int id)
-    {
-        using var conn = OpenConnection();
-        using var cmd  = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM PanelScenes WHERE Id=$id;";
-        cmd.Parameters.AddWithValue("$id", id);
-        cmd.ExecuteNonQuery();
-    }
-
-    public List<PanelPage> GetPagesForScene(int sceneId)
-    {
-        using var conn = OpenConnection();
-        using var cmd  = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, SceneId, Name, SortOrder FROM PanelPages WHERE SceneId=$sid ORDER BY SortOrder, Id;";
-        cmd.Parameters.AddWithValue("$sid", sceneId);
-        var list = new List<PanelPage>();
-        using var rdr = cmd.ExecuteReader();
-        while (rdr.Read())
-            list.Add(new PanelPage { Id = rdr.GetInt32(0), SceneId = rdr.GetInt32(1), Name = rdr.GetString(2), SortOrder = rdr.GetInt32(3) });
-        return list;
-    }
-
-    public int InsertPanelPage(PanelPage p)
-    {
-        using var conn = OpenConnection();
-        using var cmd  = conn.CreateCommand();
-        cmd.CommandText = "INSERT INTO PanelPages (SceneId, Name, SortOrder) VALUES ($sid,$n,$so); SELECT last_insert_rowid();";
-        cmd.Parameters.AddWithValue("$sid", p.SceneId);
-        cmd.Parameters.AddWithValue("$n",   p.Name);
-        cmd.Parameters.AddWithValue("$so",  p.SortOrder);
-        return System.Convert.ToInt32(cmd.ExecuteScalar());
-    }
-
-    public void UpdatePanelPage(PanelPage p)
-    {
-        using var conn = OpenConnection();
-        using var cmd  = conn.CreateCommand();
-        cmd.CommandText = "UPDATE PanelPages SET Name=$n, SortOrder=$so WHERE Id=$id;";
-        cmd.Parameters.AddWithValue("$id", p.Id);
-        cmd.Parameters.AddWithValue("$n",  p.Name);
-        cmd.Parameters.AddWithValue("$so", p.SortOrder);
-        cmd.ExecuteNonQuery();
-    }
-
-    public void DeletePanelPage(int id)
-    {
-        using var conn = OpenConnection();
-        using var cmd  = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM PanelPages WHERE Id=$id;";
-        cmd.Parameters.AddWithValue("$id", id);
-        cmd.ExecuteNonQuery();
-    }
-
-    public List<PanelButton> GetGridButtonsForPage(int pageId)
-    {
-        using var conn = OpenConnection();
-        using var cmd  = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT Id, PageId, SceneId, ButtonType, Label, Icon, Color, IsToggle, GridRow, GridCol, SortOrder
-            FROM   PanelButtons
-            WHERE  PageId=$pid AND ButtonType='grid'
-            ORDER  BY GridRow, GridCol;
-            """;
-        cmd.Parameters.AddWithValue("$pid", pageId);
-        return ReadPanelButtons(cmd);
-    }
-
-    public List<PanelButton> GetBottomButtonsForScene(int sceneId)
-    {
-        using var conn = OpenConnection();
-        using var cmd  = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT Id, PageId, SceneId, ButtonType, Label, Icon, Color, IsToggle, GridRow, GridCol, SortOrder
-            FROM   PanelButtons
-            WHERE  SceneId=$sid AND ButtonType='bottom'
-            ORDER  BY SortOrder, Id;
-            """;
-        cmd.Parameters.AddWithValue("$sid", sceneId);
-        return ReadPanelButtons(cmd);
-    }
-
-    private static List<PanelButton> ReadPanelButtons(SqliteCommand cmd)
-    {
-        var list = new List<PanelButton>();
-        using var rdr = cmd.ExecuteReader();
-        while (rdr.Read())
-            list.Add(new PanelButton
-            {
-                Id         = rdr.GetInt32(0),
-                PageId     = rdr.IsDBNull(1) ? null : rdr.GetInt32(1),
-                SceneId    = rdr.IsDBNull(2) ? null : rdr.GetInt32(2),
-                ButtonType = rdr.GetString(3),
-                Label      = rdr.GetString(4),
-                Icon       = rdr.GetString(5),
-                Color      = rdr.GetString(6),
-                IsToggle   = rdr.GetInt32(7) == 1,
-                GridRow    = rdr.GetInt32(8),
-                GridCol    = rdr.GetInt32(9),
-                SortOrder  = rdr.GetInt32(10),
-            });
-        return list;
-    }
-
-    public int InsertPanelButton(PanelButton b)
-    {
-        using var conn = OpenConnection();
-        using var cmd  = conn.CreateCommand();
-        cmd.CommandText = """
-            INSERT INTO PanelButtons (PageId, SceneId, ButtonType, Label, Icon, Color, IsToggle, GridRow, GridCol, SortOrder)
-            VALUES ($pid,$sid,$bt,$lbl,$icon,$col,$tog,$row,$col2,$so);
-            SELECT last_insert_rowid();
-            """;
-        cmd.Parameters.AddWithValue("$pid",  b.PageId.HasValue  ? b.PageId  : DBNull.Value);
-        cmd.Parameters.AddWithValue("$sid",  b.SceneId.HasValue ? b.SceneId : DBNull.Value);
-        cmd.Parameters.AddWithValue("$bt",   b.ButtonType);
-        cmd.Parameters.AddWithValue("$lbl",  b.Label);
-        cmd.Parameters.AddWithValue("$icon", b.Icon);
-        cmd.Parameters.AddWithValue("$col",  b.Color);
-        cmd.Parameters.AddWithValue("$tog",  b.IsToggle ? 1 : 0);
-        cmd.Parameters.AddWithValue("$row",  b.GridRow);
-        cmd.Parameters.AddWithValue("$col2", b.GridCol);
-        cmd.Parameters.AddWithValue("$so",   b.SortOrder);
-        return System.Convert.ToInt32(cmd.ExecuteScalar());
-    }
-
-    public void UpdatePanelButton(PanelButton b)
-    {
-        using var conn = OpenConnection();
-        using var cmd  = conn.CreateCommand();
-        cmd.CommandText = """
-            UPDATE PanelButtons
-            SET Label=$lbl, Icon=$icon, Color=$col, IsToggle=$tog, SortOrder=$so
-            WHERE Id=$id;
-            """;
-        cmd.Parameters.AddWithValue("$id",   b.Id);
-        cmd.Parameters.AddWithValue("$lbl",  b.Label);
-        cmd.Parameters.AddWithValue("$icon", b.Icon);
-        cmd.Parameters.AddWithValue("$col",  b.Color);
-        cmd.Parameters.AddWithValue("$tog",  b.IsToggle ? 1 : 0);
-        cmd.Parameters.AddWithValue("$so",   b.SortOrder);
-        cmd.ExecuteNonQuery();
-    }
-
-    public void DeletePanelButton(int id)
-    {
-        using var conn = OpenConnection();
-        using var cmd  = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM PanelButtons WHERE Id=$id;";
-        cmd.Parameters.AddWithValue("$id", id);
-        cmd.ExecuteNonQuery();
-    }
-
-    public List<PanelButtonAction> GetActionsForButton(int buttonId)
-    {
-        using var conn = OpenConnection();
-        using var cmd  = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT Id, ButtonId, Phase, DeviceId, DeviceName, CommandCode, CommandName, CommandFormat, SortOrder
-            FROM   PanelButtonActions
-            WHERE  ButtonId=$bid
-            ORDER  BY Phase, SortOrder, Id;
-            """;
-        cmd.Parameters.AddWithValue("$bid", buttonId);
-        var list = new List<PanelButtonAction>();
-        using var rdr = cmd.ExecuteReader();
-        while (rdr.Read())
-            list.Add(new PanelButtonAction
-            {
-                Id            = rdr.GetInt32(0),
-                ButtonId      = rdr.GetInt32(1),
-                Phase         = rdr.GetInt32(2),
-                DeviceId      = rdr.GetInt32(3),
-                DeviceName    = rdr.GetString(4),
-                CommandCode   = rdr.GetString(5),
-                CommandName   = rdr.GetString(6),
-                CommandFormat = rdr.GetString(7),
-                SortOrder     = rdr.GetInt32(8),
-            });
-        return list;
-    }
-
-    public void SetActionsForButton(int buttonId, IEnumerable<PanelButtonAction> actions)
-    {
-        using var conn = OpenConnection();
-        using var tx   = conn.BeginTransaction();
-        var del = conn.CreateCommand();
-        del.CommandText = "DELETE FROM PanelButtonActions WHERE ButtonId=$bid;";
-        del.Parameters.AddWithValue("$bid", buttonId);
-        del.ExecuteNonQuery();
-
-        int order = 0;
-        foreach (var a in actions)
-        {
-            var ins = conn.CreateCommand();
             ins.CommandText = """
-                INSERT INTO PanelButtonActions (ButtonId, Phase, DeviceId, DeviceName, CommandCode, CommandName, CommandFormat, SortOrder)
-                VALUES ($bid,$ph,$did,$dn,$cc,$cn,$cf,$so);
+                INSERT INTO MacroSteps (MacroId, StepOrder, CommandId, DelayAfterMs, StepType, PromptText)
+                VALUES ($mid, $ord, $cid, $del, $type, $prompt);
                 """;
-            ins.Parameters.AddWithValue("$bid", buttonId);
-            ins.Parameters.AddWithValue("$ph",  a.Phase);
-            ins.Parameters.AddWithValue("$did", a.DeviceId);
-            ins.Parameters.AddWithValue("$dn",  a.DeviceName);
-            ins.Parameters.AddWithValue("$cc",  a.CommandCode);
-            ins.Parameters.AddWithValue("$cn",  a.CommandName);
-            ins.Parameters.AddWithValue("$cf",  a.CommandFormat);
-            ins.Parameters.AddWithValue("$so",  order++);
+            ins.Parameters.AddWithValue("$mid",    macroId);
+            ins.Parameters.AddWithValue("$ord",    order++);
+            ins.Parameters.AddWithValue("$cid",    s.CommandId);
+            ins.Parameters.AddWithValue("$del",    s.DelayAfterMs);
+            ins.Parameters.AddWithValue("$type",   string.IsNullOrWhiteSpace(s.StepType) ? "command" : s.StepType);
+            ins.Parameters.AddWithValue("$prompt", s.PromptText ?? string.Empty);
             ins.ExecuteNonQuery();
         }
         tx.Commit();

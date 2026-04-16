@@ -49,12 +49,7 @@
         <DataTemplate DataType="{x:Type vm:GroupsViewModel}">
             <views:GroupsView/>
         </DataTemplate>
-        <DataTemplate DataType="{x:Type vm:PanelViewModel}">
-            <views:PanelView/>
-        </DataTemplate>
 
-        <core:EqualsToBoolConverter     x:Key="EqBool"/>
-        <core:BoolToVisibilityConverter x:Key="BoolToVis"/>
     </Window.Resources>
 
     <Grid>
@@ -203,24 +198,6 @@
                         </StackPanel>
                     </Button>
 
-                    <Button Command="{Binding NavAuditLogCommand}">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding CurrentSection}" Value="AuditLog">
-                                        <Setter Property="Background"  Value="{DynamicResource NavActiveBackBrush}"/>
-                                        <Setter Property="Foreground"  Value="{DynamicResource NavActiveForeBrush}"/>
-                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="☰" FontSize="12" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Audit Log" FontSize="13" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-
                     <!-- Macros -->
                     <Button Command="{Binding NavMacroCommand}">
                         <Button.Style>
@@ -240,12 +217,12 @@
                         </StackPanel>
                     </Button>
 
-                    <!-- Panel -->
-                    <Button Command="{Binding NavPanelCommand}">
+                    <!-- Audit Log -->
+                    <Button Command="{Binding NavAuditLogCommand}">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding CurrentSection}" Value="Panel">
+                                    <DataTrigger Binding="{Binding CurrentSection}" Value="AuditLog">
                                         <Setter Property="Background"  Value="{DynamicResource NavActiveBackBrush}"/>
                                         <Setter Property="Foreground"  Value="{DynamicResource NavActiveForeBrush}"/>
                                         <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
@@ -254,8 +231,8 @@
                             </Style>
                         </Button.Style>
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="⊞" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Panel" FontSize="13" VerticalAlignment="Center"/>
+                            <TextBlock Text="☰" FontSize="12" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Audit Log" FontSize="13" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
 

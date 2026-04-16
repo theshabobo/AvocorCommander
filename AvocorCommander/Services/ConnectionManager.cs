@@ -33,6 +33,9 @@ public sealed class ConnectionManager : IDisposable
         get { lock (_lock) return _active.Keys.ToList().AsReadOnly(); }
     }
 
+    /// <summary>Message from the most recent failed ConnectAsync, or empty on success.</summary>
+    public string LastError { get; private set; } = string.Empty;
+
     public async Task<bool> ConnectAsync(DeviceEntry device)
     {
         // Disconnect any existing connection for this device first
@@ -48,11 +51,13 @@ public sealed class ConnectionManager : IDisposable
 
         if (ok)
         {
+            LastError = string.Empty;
             lock (_lock) { _active[device.Id] = svc; _devices[device.Id] = device; }
             device.IsConnected = true;
         }
         else
         {
+            LastError = svc.LastError;
             svc.Dispose();
         }
 

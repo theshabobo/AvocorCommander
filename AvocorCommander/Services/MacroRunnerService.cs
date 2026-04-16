@@ -16,6 +16,20 @@ public sealed class MacroRunnerService
     public event EventHandler?         RunCompleted;
     public event EventHandler?         EntryLogged;
 
+    /// <summary>
+    /// Raised when a macro hits a "prompt" step. UI layer should show the
+    /// PromptText to the user and set Response.TrySetResult(true) to continue
+    /// or TrySetResult(false) to abort the whole run.
+    /// </summary>
+    public sealed class PromptRequest
+    {
+        public required string                    Message  { get; init; }
+        public required string                    MacroName { get; init; }
+        public required string                    DeviceName { get; init; }
+        public required TaskCompletionSource<bool> Response { get; init; }
+    }
+    public event EventHandler<PromptRequest>? PromptRequested;
+
     public MacroRunnerService(DatabaseService db, ConnectionManager connMgr)
     {
         _db      = db;
@@ -42,6 +56,45 @@ public sealed class MacroRunnerService
 
             foreach (var step in macro.Steps.OrderBy(s => s.StepOrder))
             {
+                // ── Prompt step: pause for user to click Continue / Cancel ──
+                if (step.IsPrompt)
+                {
+                    string msg = string.IsNullOrWhiteSpace(step.PromptText)
+                        ? "Macro paused. Click Continue to proceed or Cancel to abort."
+                        : step.PromptText;
+
+                    if (PromptRequested == null)
+                    {
+                        // No UI listener — can't prompt; treat as auto-continue.
+                        StepCompleted?.Invoke(this, $"Step {step.StepOrder}: (prompt, no UI handler — continuing) {msg}");
+                    }
+                    else
+                    {
+                        var tcs = new TaskCompletionSource<bool>();
+                        PromptRequested.Invoke(this, new PromptRequest
+                        {
+                            Message    = msg,
+                            MacroName  = macro.MacroName,
+                            DeviceName = device?.DeviceName ?? $"Device {deviceId}",
+                            Response   = tcs,
+                        });
+
+                        bool keepGoing = await tcs.Task.ConfigureAwait(false);
+                        if (!keepGoing)
+                        {
+                            StepCompleted?.Invoke(this, $"Step {step.StepOrder}: cancelled at prompt — aborting macro");
+                            RunFailed?.Invoke(this, "Macro aborted at prompt step.");
+                            return;
+                        }
+                        StepCompleted?.Invoke(this, $"Step {step.StepOrder}: prompt acknowledged — continuing");
+                    }
+
+                    if (step.DelayAfterMs > 0)
+                        await Task.Delay(step.DelayAfterMs);
+                    continue;
+                }
+
+                // ── Command step ────────────────────────────────────────────
                 var cmd = allCmds.FirstOrDefault(c => c.Id == step.CommandId);
                 if (cmd == null) { StepCompleted?.Invoke(this, $"Step {step.StepOrder}: command not found — skipped"); continue; }
 

@@ -84,11 +84,11 @@ public class UpdateService
 
         // CDN downloader — no auth, used to stream the actual file from the pre-signed URL
         _cdn = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
-        _cdn.DefaultRequestHeaders.UserAgent.ParseAdd("AvocorCommander/3.0");
+        _cdn.DefaultRequestHeaders.UserAgent.ParseAdd("AvocorCommander/3.4");
     }
 
     public static Version CurrentVersion =>
-        Assembly.GetExecutingAssembly().GetName().Version ?? new Version(3, 0, 0);
+        Assembly.GetExecutingAssembly().GetName().Version ?? new Version(3, 4, 0);
 
     public bool IsConfigured =>
         RepoOwner != "YOUR_GITHUB_USERNAME" &&

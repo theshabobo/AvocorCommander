@@ -1,6 +1,12 @@
 """
 Avocor Commander V3.0 - Database Seeder
 Creates and populates AvocorCommander.db with all RS-232/IP command data.
+
+Command rows for A-Series, B-Series, E-50, H-Series, K-Series, S-Series
+are generated from the canonical inventory:
+    V3.0/canonical_inventory.md
+E-Group1 and X-Series are preserved verbatim from the prior seed (not in
+inventory). Models now include a BaudRate column.
 """
 import sqlite3
 import os
@@ -15,7 +21,7 @@ def a_series_value(hex_val: int) -> str:
     return ' '.join(format(ord(c), '02X') for c in s)  # '31 39'
 
 def decimal_ascii_3(val: int) -> str:
-    """E-50 / H-L-9200 / S-Series: 3-digit decimal ASCII, e.g. 25 → '30 32 35'"""
+    """E-50 / H-Series / S-Series: 3-digit decimal ASCII, e.g. 25 → '30 32 35'"""
     s = format(val, '03d')              # '025'
     return ' '.join(format(ord(c), '02X') for c in s)  # '30 32 35'
 
@@ -24,11 +30,11 @@ def k_checksum(b1, b2, b3, b4) -> int:
 
 # Percentage levels: (label, hex_value, decimal_value)
 LEVELS = [
-    ("0%",   0x00,  0),
-    ("25%",  0x19, 25),
-    ("50%",  0x32, 50),
-    ("75%",  0x4B, 75),
-    ("100%", 0x64, 100),
+    ("0",   0x00,  0),
+    ("25",  0x19, 25),
+    ("50",  0x32, 50),
+    ("75",  0x4B, 75),
+    ("100", 0x64, 100),
 ]
 
 # ── schema ───────────────────────────────────────────────────────────────────
@@ -48,7 +54,8 @@ CREATE TABLE IF NOT EXISTS DeviceList (
 CREATE TABLE IF NOT EXISTS Models (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     ModelNumber   TEXT    NOT NULL UNIQUE,
-    SeriesPattern TEXT    NOT NULL
+    SeriesPattern TEXT    NOT NULL,
+    BaudRate      INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS StoredDevices (
@@ -69,73 +76,74 @@ CREATE TABLE IF NOT EXISTS MACFilter (
 );
 """
 
-# ── A-Series commands ─────────────────────────────────────────────────────────
+# ── A-Series commands (canonical) ────────────────────────────────────────────
 
-def a_vol(pct_label, hex_val):
-    v = a_series_value(hex_val)
-    return ("A-Series","Sound",f"Set Volume {pct_label}",f"6B 66 20 30 30 20 {v}","",59595,"HEX")
+def a(cat, name, code, notes=""):
+    return ("A-Series", cat, name, code, notes, 59595, "HEX")
 
 def a_var(category, name_prefix, cmd2_hex, pct_label, hex_val):
     v = a_series_value(hex_val)
     c2 = format(cmd2_hex, '02X')
-    return ("A-Series", category, f"{name_prefix} {pct_label}", f"6B {c2} 20 30 30 20 {v}", "", 59595, "HEX")
+    return ("A-Series", category, f"{name_prefix} {pct_label}",
+            f"6B {c2} 20 30 30 20 {v}", "", 59595, "HEX")
 
 A_SERIES_FIXED = [
     # Power
-    ("A-Series","Power","Power On",        "6B 61 20 30 30 20 30 31","",59595,"HEX"),
-    ("A-Series","Power","Power Off",       "6B 61 20 30 30 20 30 30","",59595,"HEX"),
-    ("A-Series","Power","Get Current State","6B 61 20 30 30 20 66 66","",59595,"HEX"),
-    # Video Source
-    ("A-Series","Video Source","Home",         "6B 62 20 30 30 20 30 30","Set Home Source",59595,"HEX"),
-    ("A-Series","Video Source","OPS",          "6B 62 20 30 30 20 30 37","Set OPS Source",59595,"HEX"),
-    ("A-Series","Video Source","Front HDMI",   "6B 62 20 30 30 20 30 38","Set Front HDMI Source",59595,"HEX"),
-    ("A-Series","Video Source","HDMI 1",       "6B 62 20 30 30 20 30 39","Set HDMI1 Source",59595,"HEX"),
-    ("A-Series","Video Source","HDMI 2",       "6B 62 20 30 30 20 30 61","Set HDMI2 Source",59595,"HEX"),
-    ("A-Series","Video Source","HDMI 3",       "6B 62 20 30 30 20 30 62","Set HDMI3 Source",59595,"HEX"),
-    ("A-Series","Video Source","Display Port", "6B 62 20 30 30 20 30 63","Set Display Port Source",59595,"HEX"),
-    ("A-Series","Video Source","USB-C",        "6B 62 20 30 30 20 30 64","Set USB-C Source",59595,"HEX"),
-    ("A-Series","Video Source","Front USB-C",  "6B 62 20 30 30 20 30 65","Front USB-C",59595,"HEX"),
-    ("A-Series","Video Source","Get Current State","6B 62 20 30 30 20 66 66","Get Current Source",59595,"HEX"),
-    # ARC
-    ("A-Series","ARC","16:09",           "6B 63 20 30 30 20 30 31","",59595,"HEX"),
-    ("A-Series","ARC","4:03",            "6B 63 20 30 30 20 30 32","",59595,"HEX"),
-    ("A-Series","ARC","P2P",             "6B 63 20 30 30 20 30 35","",59595,"HEX"),
-    ("A-Series","ARC","Get Current State","6B 63 20 30 30 20 66 66","",59595,"HEX"),
-    # Picture mode
-    ("A-Series","Picture","Standard",          "6B 75 20 30 30 20 30 30","",59595,"HEX"),
-    ("A-Series","Picture","Soft",              "6B 75 20 30 30 20 30 31","",59595,"HEX"),
-    ("A-Series","Picture","Bright",            "6B 75 20 30 30 20 30 32","",59595,"HEX"),
-    ("A-Series","Picture","Get Current State", "6B 75 20 30 30 20 66 66","",59595,"HEX"),
-    ("A-Series","Picture","Get Contrast State","6B 67 20 30 30 20 66 66","",59595,"HEX"),
-    ("A-Series","Picture","Get Brightness State","6B 68 20 30 30 20 66 66","",59595,"HEX"),
-    ("A-Series","Picture","Get Saturation State","6B 69 20 30 30 20 66 66","",59595,"HEX"),
-    ("A-Series","Picture","Get Hue State",     "6B 6F 20 30 30 20 66 66","",59595,"HEX"),
-    ("A-Series","Picture","Freeze ON",         "6B 7A 20 30 30 20 30 31","",59595,"HEX"),
-    ("A-Series","Picture","Freeze OFF",        "6B 7A 20 30 30 20 30 30","",59595,"HEX"),
-    ("A-Series","Picture","Get Freeze State",  "6B 7A 20 30 30 20 66 66","",59595,"HEX"),
+    a("Power", "Power On",         "6B 61 20 30 30 20 30 31"),
+    a("Power", "Power Off",        "6B 61 20 30 30 20 30 30"),
+    a("Power", "Get Power State",  "6B 61 20 30 30 20 66 66"),
+    # Source
+    a("Source", "Home",            "6B 62 20 30 30 20 30 30"),
+    a("Source", "OPS",             "6B 62 20 30 30 20 30 37"),
+    a("Source", "Front HDMI",      "6B 62 20 30 30 20 30 38"),
+    a("Source", "HDMI 1",          "6B 62 20 30 30 20 30 39"),
+    a("Source", "HDMI 2",          "6B 62 20 30 30 20 30 61"),
+    a("Source", "HDMI 3",          "6B 62 20 30 30 20 30 62"),
+    a("Source", "Display Port",    "6B 62 20 30 30 20 30 63"),
+    a("Source", "USB-C",           "6B 62 20 30 30 20 30 64"),
+    a("Source", "Front USB-C",     "6B 62 20 30 30 20 30 65"),
+    a("Source", "Get Source State","6B 62 20 30 30 20 66 66"),
+    # Aspect Ratio
+    a("Aspect Ratio", "Aspect 16:9",      "6B 63 20 30 30 20 30 31"),
+    a("Aspect Ratio", "Aspect 4:3",       "6B 63 20 30 30 20 30 32"),
+    a("Aspect Ratio", "Aspect P2P",       "6B 63 20 30 30 20 30 35"),
+    a("Aspect Ratio", "Get Aspect State", "6B 63 20 30 30 20 66 66"),
+    # Picture Mode
+    a("Picture Mode", "Picture Standard",       "6B 75 20 30 30 20 30 30"),
+    a("Picture Mode", "Picture Soft",           "6B 75 20 30 30 20 30 31"),
+    a("Picture Mode", "Picture Bright",         "6B 75 20 30 30 20 30 32"),
+    a("Picture Mode", "Get Picture Mode State", "6B 75 20 30 30 20 66 66"),
+    # Picture
+    a("Picture", "Get Contrast State",   "6B 67 20 30 30 20 66 66"),
+    a("Picture", "Get Brightness State", "6B 68 20 30 30 20 66 66"),
+    a("Picture", "Get Saturation State", "6B 69 20 30 30 20 66 66"),
+    a("Picture", "Get Hue State",        "6B 6F 20 30 30 20 66 66"),
+    a("Picture", "Freeze On",            "6B 7A 20 30 30 20 30 31"),
+    a("Picture", "Freeze Off",           "6B 7A 20 30 30 20 30 30"),
+    a("Picture", "Get Freeze State",     "6B 7A 20 30 30 20 66 66"),
     # Sound
-    ("A-Series","Sound","Mute ON",             "6B 65 20 30 30 20 30 31","",59595,"HEX"),
-    ("A-Series","Sound","Mute OFF",            "6B 65 20 30 30 20 30 30","",59595,"HEX"),
-    ("A-Series","Sound","Get Mute State",      "6B 65 20 30 30 20 66 66","",59595,"HEX"),
-    ("A-Series","Sound","Volume UP",           "6B 76 20 30 30 20 30 31","",59595,"HEX"),
-    ("A-Series","Sound","Volume DOWN",         "6B 76 20 30 30 20 30 30","",59595,"HEX"),
-    ("A-Series","Sound","Get Volume State",    "6B 66 20 30 30 20 66 66","",59595,"HEX"),
+    a("Sound", "Mute On",          "6B 65 20 30 30 20 30 31"),
+    a("Sound", "Mute Off",         "6B 65 20 30 30 20 30 30"),
+    a("Sound", "Get Mute State",   "6B 65 20 30 30 20 66 66"),
+    a("Sound", "Volume Up",        "6B 76 20 30 30 20 30 31"),
+    a("Sound", "Volume Down",      "6B 76 20 30 30 20 30 30"),
+    a("Sound", "Get Volume State", "6B 66 20 30 30 20 66 66"),
     # Remote Control
-    ("A-Series","Remote Control","Menu",   "6D 63 20 30 30 20 39 35","",59595,"HEX"),
-    ("A-Series","Remote Control","Left",   "6D 63 20 30 30 20 38 66","",59595,"HEX"),
-    ("A-Series","Remote Control","Up",     "6D 63 20 30 30 20 38 64","",59595,"HEX"),
-    ("A-Series","Remote Control","OK",     "6D 63 20 30 30 20 38 63","",59595,"HEX"),
-    ("A-Series","Remote Control","Right",  "6D 63 20 30 30 20 38 30","",59595,"HEX"),
-    ("A-Series","Remote Control","Down",   "6D 63 20 30 30 20 38 65","",59595,"HEX"),
-    ("A-Series","Remote Control","Exit",   "6D 63 20 30 30 20 39 36","",59595,"HEX"),
-    ("A-Series","Remote Control","Source", "6D 63 20 30 30 20 61 63","",59595,"HEX"),
-    ("A-Series","Remote Control","On",     "6D 73 20 30 30 20 30 31","",59595,"HEX"),
-    ("A-Series","Remote Control","Off",    "6D 73 20 30 30 20 30 30","",59595,"HEX"),
-    ("A-Series","Remote Control","Read",   "6D 73 20 30 30 20 66 66","",59595,"HEX"),
+    a("Remote Control", "Remote Menu",      "6D 63 20 30 30 20 39 35"),
+    a("Remote Control", "Remote Left",      "6D 63 20 30 30 20 38 66"),
+    a("Remote Control", "Remote Up",        "6D 63 20 30 30 20 38 64"),
+    a("Remote Control", "Remote OK",        "6D 63 20 30 30 20 38 63"),
+    a("Remote Control", "Remote Right",     "6D 63 20 30 30 20 38 30"),
+    a("Remote Control", "Remote Down",      "6D 63 20 30 30 20 38 65"),
+    a("Remote Control", "Remote Exit",      "6D 63 20 30 30 20 39 36"),
+    a("Remote Control", "Remote Source",    "6D 63 20 30 30 20 61 63"),
+    a("Remote Control", "Remote On",        "6D 73 20 30 30 20 30 31"),
+    a("Remote Control", "Remote Off",       "6D 73 20 30 30 20 30 30"),
+    a("Remote Control", "Get Remote State", "6D 73 20 30 30 20 66 66"),
     # OSD Key Lock
-    ("A-Series","OSD Key Lock","On",           "6D 6F 20 30 30 20 30 31","",59595,"HEX"),
-    ("A-Series","OSD Key Lock","Off",          "6D 6F 20 30 30 20 30 30","",59595,"HEX"),
-    ("A-Series","OSD Key Lock","Current State","6D 6F 20 30 30 20 66 66","",59595,"HEX"),
+    a("OSD Key Lock", "OSD Lock On",         "6D 6F 20 30 30 20 30 31"),
+    a("OSD Key Lock", "OSD Lock Off",        "6D 6F 20 30 30 20 30 30"),
+    a("OSD Key Lock", "Get OSD Lock State",  "6D 6F 20 30 30 20 66 66"),
 ]
 
 def build_a_series():
@@ -148,52 +156,54 @@ def build_a_series():
         rows.append(a_var("Picture", "Set Hue",        0x6F, lbl, hv))
     return rows
 
-# ── B-Series commands ─────────────────────────────────────────────────────────
+# ── B-Series commands (canonical) ────────────────────────────────────────────
 
-B_SERIES = [
-    ("B-Series","System",       "Version Check",             "!Version ?",          "",10180,"ASCII"),
-    ("B-Series","Power",        "Power On",                  "!Power On",           "",10180,"ASCII"),
-    ("B-Series","Power",        "Standby",                   "!Power Off",          "",10180,"ASCII"),
-    ("B-Series","Power",        "Power Toggle",              "!Power Toggle",       "",10180,"ASCII"),
-    ("B-Series","Power",        "Current State",             "!Power ?",            "",10180,"ASCII"),
-    ("B-Series","Backlight",    "Set Level 0%",              "!Backlight 0",        "",10180,"ASCII"),
-    ("B-Series","Backlight",    "Set Level 25%",             "!Backlight 25",       "",10180,"ASCII"),
-    ("B-Series","Backlight",    "Set Level 50%",             "!Backlight 50",       "",10180,"ASCII"),
-    ("B-Series","Backlight",    "Set Level 75%",             "!Backlight 75",       "",10180,"ASCII"),
-    ("B-Series","Backlight",    "Set Level 100%",            "!Backlight 100",      "",10180,"ASCII"),
-    ("B-Series","Backlight",    "Current State",             "!Backlight ?",        "",10180,"ASCII"),
-    ("B-Series","Volume",       "Volume Up",                 "!Volume Up",          "",10180,"ASCII"),
-    ("B-Series","Volume",       "Volume Down",               "!Volume Down",        "",10180,"ASCII"),
-    ("B-Series","Volume",       "Set Volume 0%",             "!Volume 0",           "",10180,"ASCII"),
-    ("B-Series","Volume",       "Set Volume 25%",            "!Volume 25",          "",10180,"ASCII"),
-    ("B-Series","Volume",       "Set Volume 50%",            "!Volume 50",          "",10180,"ASCII"),
-    ("B-Series","Volume",       "Set Volume 75%",            "!Volume 75",          "",10180,"ASCII"),
-    ("B-Series","Volume",       "Set Volume 100%",           "!Volume 100",         "",10180,"ASCII"),
-    ("B-Series","Volume",       "Current State",             "!Volume ?",           "",10180,"ASCII"),
-    ("B-Series","Volume",       "Mute On",                   "!Mute On",            "",10180,"ASCII"),
-    ("B-Series","Volume",       "Mute Off",                  "!Mute Off",           "",10180,"ASCII"),
-    ("B-Series","Volume",       "Mute Toggle",               "!Mute Toggle",        "",10180,"ASCII"),
-    ("B-Series","Volume",       "Mute Current State",        "!Mute ?",             "",10180,"ASCII"),
-    ("B-Series","Input",        "Home",                      "!Input Android 1",    "",10180,"ASCII"),
-    ("B-Series","Input",        "HDMI 1",                    "!Input HDMI 1",       "",10180,"ASCII"),
-    ("B-Series","Input",        "HDMI 2",                    "!Input HDMI 2",       "",10180,"ASCII"),
-    ("B-Series","Input",        "OPS 1",                     "!Input OPS 1",        "",10180,"ASCII"),
-    ("B-Series","Signal Status","Status HDMI 1",             "!Status HDMI 1 ?",    "",10180,"ASCII"),
-    ("B-Series","Signal Status","Status HDMI 2",             "!Status HDMI 2 ?",    "",10180,"ASCII"),
-    ("B-Series","Signal Status","Status OPS 1",              "!Status OPS 1 ?",     "",10180,"ASCII"),
-    ("B-Series","Application",  "Get All Installed Apps",    "!List ?",             "",10180,"ASCII"),
-    ("B-Series","Application",  "Open Application",          "!Open XYZ",           "Replace XYZ with app name",10180,"ASCII"),
-    ("B-Series","Application",  "Close Application",         "!Close XYZ",          "Replace XYZ with app name",10180,"ASCII"),
-    ("B-Series","IR Emulation", "Home",                      "!IR Home",            "",10180,"ASCII"),
-    ("B-Series","IR Emulation", "Cursor Up",                 "!IR Cursor Up",       "",10180,"ASCII"),
-    ("B-Series","IR Emulation", "Cursor Down",               "!IR Cursor Down",     "",10180,"ASCII"),
-    ("B-Series","IR Emulation", "Cursor Left",               "!IR Cursor Left",     "",10180,"ASCII"),
-    ("B-Series","IR Emulation", "Cursor Right",              "!IR Cursor Right",    "",10180,"ASCII"),
-    ("B-Series","IR Emulation", "OK",                        "!IR OK",              "",10180,"ASCII"),
-    ("B-Series","IR Emulation", "Back",                      "!IR Back",            "",10180,"ASCII"),
+def b(cat, name, code, notes=""):
+    return ("B-Series", cat, name, code, notes, 10180, "ASCII")
+
+B_SERIES_FIXED = [
+    b("System",     "Get Version",            "!Version ?"),
+    b("Power",      "Power On",               "!Power On"),
+    b("Power",      "Power Off",              "!Power Off"),
+    b("Power",      "Power Toggle",           "!Power Toggle"),
+    b("Power",      "Get Power State",        "!Power ?"),
+    b("Backlight",  "Get Backlight State",    "!Backlight ?"),
+    b("Volume",     "Volume Up",              "!Volume Up"),
+    b("Volume",     "Volume Down",            "!Volume Down"),
+    b("Volume",     "Get Volume State",       "!Volume ?"),
+    b("Volume",     "Mute On",                "!Mute On"),
+    b("Volume",     "Mute Off",               "!Mute Off"),
+    b("Volume",     "Mute Toggle",            "!Mute Toggle"),
+    b("Volume",     "Get Mute State",         "!Mute ?"),
+    b("Input",      "Home",                   "!Input Android 1"),
+    b("Input",      "HDMI 1",                 "!Input HDMI 1"),
+    b("Input",      "HDMI 2",                 "!Input HDMI 2"),
+    b("Input",      "OPS 1",                  "!Input OPS 1"),
+    b("Input",      "Get Input State",        "!Input ?"),
+    b("Signal Status","Get Status HDMI 1",    "!Status HDMI 1 ?"),
+    b("Signal Status","Get Status HDMI 2",    "!Status HDMI 2 ?"),
+    b("Signal Status","Get Status OPS 1",     "!Status OPS 1 ?"),
+    b("Application","Get Installed Apps",     "!List ?"),
+    b("Application","Open App",               "!Open XYZ", "Replace XYZ with app name"),
+    b("Application","Close App",              "!Close XYZ", "Replace XYZ with app name"),
+    # IR Emulation — manual spelling (lowercase 'k' in !IR Ok)
+    b("IR Emulation","IR Home",               "!IR Home"),
+    b("IR Emulation","IR Up",                 "!IR Up"),
+    b("IR Emulation","IR Down",               "!IR Down"),
+    b("IR Emulation","IR Left",               "!IR Left"),
+    b("IR Emulation","IR Right",              "!IR Right"),
+    b("IR Emulation","IR OK",                 "!IR Ok"),
+    b("IR Emulation","IR Back",               "!IR Back"),
 ]
 
-# ── E-Group1 commands ─────────────────────────────────────────────────────────
+def build_b_series():
+    rows = list(B_SERIES_FIXED)
+    for lbl, hv, dv in LEVELS:
+        rows.append(b("Backlight", f"Set Backlight {lbl}", f"!Backlight {dv}"))
+        rows.append(b("Volume",    f"Set Volume {lbl}",    f"!Volume {dv}"))
+    return rows
+
+# ── E-Group1 commands (preserved verbatim from prior seed) ───────────────────
 
 def eg1(cat, name, code, notes=""):
     return ("E-Group1", cat, name, code, notes, 4664, "HEX")
@@ -329,7 +339,6 @@ E_GROUP1_FIXED = [
     eg1("OSD Timeout","60 Seconds", "07 01 02 4F 53 4F 3C 08"),
 ]
 
-# Variable commands for E-Group1: range 00~64 hex (0-100 decimal)
 EG1_VAR_CMDS = [
     ("Picture Settings","Backlight Brightness", "07 01 02 42 52 49"),
     ("Picture Settings","Digital Brightness",   "07 01 02 42 52 4C"),
@@ -357,7 +366,6 @@ EG1_VAR_CMDS = [
     ("OSD Control","OSD Vertical Position",     "07 01 02 4F 53 56"),
 ]
 
-# Bass/Treble/Balance range 00~14 hex (0-20 decimal) → 25% steps: 0,5,10,15,20 → 0x00,0x05,0x0A,0x0F,0x14
 EG1_AUDIO_RANGE20 = [
     ("Audio","Bass",    "07 01 02 42 41 53"),
     ("Audio","Treble",  "07 01 02 54 52 45"),
@@ -369,13 +377,15 @@ def build_e_group1():
     rows = list(E_GROUP1_FIXED)
     for cat, name_prefix, prefix in EG1_VAR_CMDS:
         for lbl, hv, dv in LEVELS:
-            rows.append(("E-Group1", cat, f"{name_prefix} {lbl}", f"{prefix} {format(hv,'02X')} 08", "", 4664, "HEX"))
+            rows.append(("E-Group1", cat, f"{name_prefix} {lbl}%",
+                         f"{prefix} {format(hv,'02X')} 08", "", 4664, "HEX"))
     for cat, name_prefix, prefix in EG1_AUDIO_RANGE20:
         for lbl, hv in LEVELS_20:
-            rows.append(("E-Group1", cat, f"{name_prefix} {lbl}", f"{prefix} {format(hv,'02X')} 08", "", 4664, "HEX"))
+            rows.append(("E-Group1", cat, f"{name_prefix} {lbl}",
+                         f"{prefix} {format(hv,'02X')} 08", "", 4664, "HEX"))
     return rows
 
-# ── E-50 commands ─────────────────────────────────────────────────────────────
+# ── E-50 commands (canonical) ────────────────────────────────────────────────
 
 def e50(cat, name, code, notes=""):
     return ("E-50", cat, name, code, notes, 4660, "HEX")
@@ -386,58 +396,57 @@ def e50_var(cat, name_prefix, cmd_byte_hex, pct_label, dec_val):
     return ("E-50", cat, f"{name_prefix} {pct_label}", code, "", 4660, "HEX")
 
 E50_FIXED = [
-    e50("Power","Power On",          "6B 30 31 73 41 30 30 31 0D"),
-    e50("Power","Power Off",         "6B 30 31 73 41 30 30 30 0D"),
-    e50("Power","Read Power State",  "6B 30 31 67 69 30 30 30 0D"),
-    e50("Source","Home",             "6B 30 31 73 42 30 30 41 0D"),
-    e50("Source","OPS",              "6B 30 31 73 42 30 30 37 0D"),
-    e50("Source","DisplayPort",      "6B 30 31 73 42 30 30 39 0D"),
-    e50("Source","HDMI 1",           "6B 30 31 73 42 30 31 34 0D"),
-    e50("Source","HDMI 2",           "6B 30 31 73 42 30 32 34 0D"),
-    e50("Source","VGA",              "6B 30 31 73 42 30 30 36 0D"),
-    e50("Source","Front Type-C",     "6B 30 31 73 42 30 30 43 0D"),
-    e50("Source","Rear Type-C",      "6B 30 31 73 42 30 30 40 0D"),
-    e50("Remote Control","Up",       "6B 30 31 73 5B 30 30 30 0D"),
-    e50("Remote Control","Down",     "6B 30 31 73 5B 30 30 31 0D"),
-    e50("Remote Control","Left",     "6B 30 31 73 5B 30 30 32 0D"),
-    e50("Remote Control","Right",    "6B 30 31 73 5B 30 30 33 0D"),
-    e50("Remote Control","Confirm",  "6B 30 31 73 5B 30 30 34 0D"),
-    e50("Remote Control","Return",   "6B 30 31 73 5B 30 30 37 0D"),
-    e50("Remote Control","Lock Remote",   "6B 30 31 73 56 30 30 30 0D"),
-    e50("Remote Control","Unlock Remote", "6B 30 31 73 56 30 30 31 0D"),
-    e50("Remote Control","Read Remote Lock","6B 30 31 67 6A 30 30 30 0D"),
-    e50("Volume","Mute Off",         "6B 30 31 73 51 30 30 30 0D"),
-    e50("Volume","Mute On",          "6B 30 31 73 51 30 30 31 0D"),
-    e50("Volume","Read Mute State",  "6B 30 31 67 67 30 30 30 0D"),
-    e50("Volume","Volume Up",        "6B 30 31 73 50 32 30 31 0D"),
-    e50("Volume","Volume Down",      "6B 30 31 73 50 32 30 30 0D"),
-    e50("Volume","Read Volume",      "6B 30 31 67 66 30 30 30 0D"),
-    e50("Color Mode","Normal",       "6B 30 31 73 48 30 30 30 0D"),
-    e50("Color Mode","Warm",         "6B 30 31 73 48 30 30 31 0D"),
-    e50("Color Mode","Cool",         "6B 30 31 73 48 30 30 32 0D"),
-    e50("Color Mode","User",         "6B 30 31 73 48 30 30 33 0D"),
-    e50("Brightness","Read Brightness","6B 30 31 67 62 30 30 30 0D"),
-    e50("Contrast","Read Contrast",  "6B 30 31 67 61 30 30 30 0D"),
-    e50("Sharpness","Read Sharpness","6B 30 31 67 63 30 30 30 0D"),
-    e50("Button Lock","Lock Buttons",   "6B 30 31 73 52 30 30 30 0D"),
-    e50("Button Lock","Unlock Buttons", "6B 30 31 73 52 30 30 31 0D"),
-    e50("Button Lock","Read Button Lock","6B 30 31 67 6C 30 30 30 0D"),
-    e50("Touch Lock","Lock Touch",   "6B 30 31 73 5C 30 30 30 0D"),
-    e50("Touch Lock","Unlock Touch", "6B 30 31 73 5C 30 30 31 0D"),
-    e50("Touch Lock","Read Touch Lock","6B 30 31 67 75 30 30 30 0D"),
-    e50("Date/Time","Read Uptime",   "6B 30 31 67 6F 30 30 30 0D"),
-    e50("Date/Time","Read Year",     "6B 30 31 67 70 48 30 30 0D"),
-    e50("Date/Time","Read Month",    "6B 30 31 67 70 4D 30 30 0D"),
-    e50("Date/Time","Read Day",      "6B 30 31 67 70 44 30 30 0D"),
-    e50("Date/Time","Read Hour",     "6B 30 31 67 71 48 30 30 0D"),
-    e50("Date/Time","Read Minute",   "6B 30 31 67 71 4D 30 30 0D"),
-    e50("Date/Time","Read Second",   "6B 30 31 67 71 53 30 30 0D"),
-    e50("Information","Read Device Name","6B 30 31 67 72 30 30 30 0D"),
-    e50("Information","Read MAC Address","6B 30 31 67 73 30 30 30 0D"),
+    e50("Power","Power On",        "6B 30 31 73 41 30 30 31 0D"),
+    e50("Power","Power Off",       "6B 30 31 73 41 30 30 30 0D"),
+    e50("Power","Get Power State", "6B 30 31 67 69 30 30 30 0D"),
+    e50("Source","Home",           "6B 30 31 73 42 30 30 41 0D"),
+    e50("Source","OPS",            "6B 30 31 73 42 30 30 37 0D"),
+    e50("Source","Display Port",   "6B 30 31 73 42 30 30 39 0D"),
+    e50("Source","HDMI 1",         "6B 30 31 73 42 30 31 34 0D"),
+    e50("Source","HDMI 2",         "6B 30 31 73 42 30 32 34 0D"),
+    e50("Source","VGA",            "6B 30 31 73 42 30 30 36 0D"),
+    e50("Source","Front Type-C",   "6B 30 31 73 42 30 30 43 0D"),
+    e50("Source","Rear Type-C",    "6B 30 31 73 42 30 30 40 0D"),
+    e50("Remote Control","Remote Up",         "6B 30 31 73 5B 30 30 30 0D"),
+    e50("Remote Control","Remote Down",       "6B 30 31 73 5B 30 30 31 0D"),
+    e50("Remote Control","Remote Left",       "6B 30 31 73 5B 30 30 32 0D"),
+    e50("Remote Control","Remote Right",      "6B 30 31 73 5B 30 30 33 0D"),
+    e50("Remote Control","Remote Confirm",    "6B 30 31 73 5B 30 30 34 0D"),
+    e50("Remote Control","Remote Return",     "6B 30 31 73 5B 30 30 37 0D"),
+    e50("Remote Control","Remote Lock",       "6B 30 31 73 56 30 30 30 0D"),
+    e50("Remote Control","Remote Unlock",     "6B 30 31 73 56 30 30 31 0D"),
+    e50("Remote Control","Get Remote Lock State", "6B 30 31 67 6A 30 30 30 0D"),
+    e50("Volume","Mute Off",          "6B 30 31 73 51 30 30 30 0D"),
+    e50("Volume","Mute On",           "6B 30 31 73 51 30 30 31 0D"),
+    e50("Volume","Get Mute State",    "6B 30 31 67 67 30 30 30 0D"),
+    e50("Volume","Volume Up",         "6B 30 31 73 50 32 30 31 0D"),
+    e50("Volume","Volume Down",       "6B 30 31 73 50 32 30 30 0D"),
+    e50("Volume","Get Volume State",  "6B 30 31 67 66 30 30 30 0D"),
+    e50("Color Mode","Color Normal",  "6B 30 31 73 48 30 30 30 0D"),
+    e50("Color Mode","Color Warm",    "6B 30 31 73 48 30 30 31 0D"),
+    e50("Color Mode","Color Cool",    "6B 30 31 73 48 30 30 32 0D"),
+    e50("Color Mode","Color User",    "6B 30 31 73 48 30 30 33 0D"),
+    e50("Brightness","Get Brightness State", "6B 30 31 67 62 30 30 30 0D"),
+    e50("Contrast", "Get Contrast State",    "6B 30 31 67 61 30 30 30 0D"),
+    e50("Sharpness","Get Sharpness State",   "6B 30 31 67 63 30 30 30 0D"),
+    e50("Button Lock","Buttons Lock",          "6B 30 31 73 52 30 30 30 0D"),
+    e50("Button Lock","Buttons Unlock",        "6B 30 31 73 52 30 30 31 0D"),
+    e50("Button Lock","Get Buttons Lock State","6B 30 31 67 6C 30 30 30 0D"),
+    e50("Touch Lock","Touch Lock",             "6B 30 31 73 5C 30 30 30 0D"),
+    e50("Touch Lock","Touch Unlock",           "6B 30 31 73 5C 30 30 31 0D"),
+    e50("Touch Lock","Get Touch Lock State",   "6B 30 31 67 75 30 30 30 0D"),
+    e50("Date/Time","Get Uptime",   "6B 30 31 67 6F 30 30 30 0D"),
+    e50("Date/Time","Get Year",     "6B 30 31 67 70 48 30 30 0D"),
+    e50("Date/Time","Get Month",    "6B 30 31 67 70 4D 30 30 0D"),
+    e50("Date/Time","Get Day",      "6B 30 31 67 70 44 30 30 0D"),
+    e50("Date/Time","Get Hour",     "6B 30 31 67 71 48 30 30 0D"),
+    e50("Date/Time","Get Minute",   "6B 30 31 67 71 4D 30 30 0D"),
+    e50("Date/Time","Get Second",   "6B 30 31 67 71 53 30 30 0D"),
+    e50("Information","Get Device Name", "6B 30 31 67 72 30 30 30 0D"),
+    e50("Information","Get MAC Address", "6B 30 31 67 73 30 30 30 0D"),
     e50("Factory Reset","Factory Reset", "6B 30 31 73 5A 30 30 30 0D"),
 ]
 
-# E-50 variable commands: cmd_byte as hex string, decimal 0-100 range
 E50_VAR_CMDS = [
     ("Volume",    "Set Volume",     "50"),
     ("Bass",      "Set Bass",       "4A"),
@@ -454,122 +463,140 @@ def build_e50():
             rows.append(e50_var(cat, name_prefix, cmd_byte, lbl, dv))
     return rows
 
-# ── H/L/9200 commands ─────────────────────────────────────────────────────────
+# ── H-Series commands (canonical; covers AVE-9200, AVL-1050-X, AVH-xx20) ────
 
-def hl(cat, name, code, notes=""):
-    return ("H/L/9200", cat, name, code, notes, 4664, "HEX")
+def h(cat, name, code, notes=""):
+    return ("H-Series", cat, name, code, notes, 4664, "HEX")
 
-def hl_var(cat, name_prefix, cmd_byte_hex, pct_label, dec_val):
+def h_var(cat, name_prefix, cmd_byte_hex, pct_label, dec_val):
     d = decimal_ascii_3(dec_val)
     code = f"3A 30 31 53 {cmd_byte_hex} {d} 0D"
-    return ("H/L/9200", cat, f"{name_prefix} {pct_label}", code, "", 4664, "HEX")
+    return ("H-Series", cat, f"{name_prefix} {pct_label}", code, "", 4664, "HEX")
 
-HL_FIXED = [
-    hl("Power","Backlight Off",    "3A 30 31 53 30 30 30 30 0D","Backlight off"),
-    hl("Power","Backlight On",     "3A 30 31 53 30 30 30 31 0D","Backlight on"),
-    hl("Power","Power Off",        "3A 30 31 53 30 30 30 32 0D","Power off"),
-    hl("Power","Power On",         "3A 30 31 53 30 30 30 33 0D","Power on"),
-    hl("Power","Screen On",        "3A 30 31 53 45 30 30 31 0D","Turn ON Screen"),
-    hl("Power","Screen Off",       "3A 30 31 53 45 30 30 30 0D","Turn OFF Screen"),
-    hl("Power","Get Current State","3A 30 31 47 30 30 30 30 0D","Get Current State"),
-    hl("Treble","-5",              "3A 30 31 53 31 2D 30 35 0D"),
-    hl("Treble","-3",              "3A 30 31 53 31 2D 30 33 0D"),
-    hl("Treble","+3",              "3A 30 31 53 31 2B 30 33 0D"),
-    hl("Treble","+5",              "3A 30 31 53 31 2B 30 35 0D"),
-    hl("Bass","-5",                "3A 30 31 53 32 2D 30 35 0D"),
-    hl("Bass","-3",                "3A 30 31 53 32 2D 30 33 0D"),
-    hl("Bass","+3",                "3A 30 31 53 32 2B 30 33 0D"),
-    hl("Bass","+5",                "3A 30 31 53 32 2B 30 35 0D"),
-    hl("Balance","-50",            "3A 30 31 53 33 2D 35 30 0D"),
-    hl("Balance","+20",            "3A 30 31 53 33 2B 32 30 0D"),
-    hl("Sound Mode","Movie",       "3A 30 31 53 37 30 30 30 0D"),
-    hl("Sound Mode","Standard",    "3A 30 31 53 37 30 30 31 0D"),
-    hl("Sound Mode","Custom",      "3A 30 31 53 37 30 30 32 0D"),
-    hl("Sound Mode","Classroom",   "3A 30 31 53 37 30 30 33 0D"),
-    hl("Sound Mode","Meeting",     "3A 30 31 53 37 30 30 34 0D"),
-    hl("Volume","Mute On",         "3A 30 31 53 39 30 30 31 0D","Mute On"),
-    hl("Volume","Mute Off",        "3A 30 31 53 39 30 30 30 0D","Mute Off"),
-    hl("Video Source","Get Current State",    "3A 30 31 47 3A 30 30 30 0D"),
-    hl("Video Source","HDMI 1",              "3A 30 31 53 3A 30 30 31 0D"),
-    hl("Video Source","HDMI 2",              "3A 30 31 53 3A 30 30 32 0D"),
-    hl("Video Source","HDMI 3",              "3A 30 31 53 3A 30 32 31 0D"),
-    hl("Video Source","HDMI 4",              "3A 30 31 53 3A 30 32 32 0D"),
-    hl("Video Source","Home",                "3A 30 31 53 3A 31 30 31 0D"),
-    hl("Video Source","OPS",                 "3A 30 31 53 3A 31 30 33 0D"),
-    hl("Video Source","Display Port",        "3A 30 31 53 3A 30 30 37 0D"),
-    hl("Video Source","USB-C",               "3A 30 31 53 3A 31 30 34 0D"),
-    hl("Video Source","USB-C 2 (AVE-9200)",  "3A 30 31 53 3A 31 30 35 0D"),
-    hl("Video Source","Get Source Signal Status","3A 30 31 47 4B 30 30 30 0D"),
-    hl("Language","English",   "3A 30 31 53 3C 30 30 30 0D"),
-    hl("Language","Français",  "3A 30 31 53 3C 30 30 31 0D"),
-    hl("Language","Español",   "3A 30 31 53 3C 30 30 32 0D"),
-    hl("Language","Dutch",     "3A 30 31 53 3C 30 30 37 0D"),
-    hl("Language","Italian",   "3A 30 31 53 3C 30 31 33 0D"),
-    hl("Picture Settings","Standard",  "3A 30 31 53 3D 30 30 30 0D"),
-    hl("Picture Settings","Bright",    "3A 30 31 53 3D 30 30 31 0D"),
-    hl("Picture Settings","Soft",      "3A 30 31 53 3D 30 30 32 0D"),
-    hl("Picture Settings","Customer",  "3A 30 31 53 3D 30 30 33 0D"),
-    hl("Color Temperature","Cool",     "3A 30 31 53 40 30 30 30 0D"),
-    hl("Color Temperature","Standard", "3A 30 31 53 40 30 30 31 0D"),
-    hl("Color Temperature","Warm",     "3A 30 31 53 40 30 30 32 0D"),
-    hl("IR","Enable",  "3A 30 31 53 42 30 30 30 0D"),
-    hl("IR","Disable", "3A 30 31 53 42 30 30 31 0D"),
-    hl("Speaker","On",  "3A 30 31 53 43 30 30 31 0D"),
-    hl("Speaker","Off", "3A 30 31 53 43 30 30 30 0D"),
-    hl("Touch","On",    "3A 30 31 53 44 30 30 31 0D"),
-    hl("Touch","Off",   "3A 30 31 53 44 30 30 30 0D"),
-    hl("Power","No Signal Off",    "3A 30 31 53 46 30 30 30 0D"),
-    hl("Power","No Signal 1 Min",  "3A 30 31 53 46 30 30 31 0D"),
-    hl("Power","No Signal 3 Min",  "3A 30 31 53 46 30 30 33 0D"),
-    hl("Power","No Signal 5 Min",  "3A 30 31 53 46 30 30 35 0D"),
-    hl("Power","No Signal 10 Min", "3A 30 31 53 46 30 31 30 0D"),
-    hl("Power","No Signal 15 Min", "3A 30 31 53 46 30 31 35 0D"),
-    hl("Power","No Signal 30 Min", "3A 30 31 53 46 30 33 30 0D"),
-    hl("Power","No Signal 45 Min", "3A 30 31 53 46 30 34 35 0D"),
-    hl("Power","No Signal 60 Min", "3A 30 31 53 46 30 36 30 0D"),
-    hl("HDMI Out","On",  "3A 30 31 53 48 30 30 31 0D"),
-    hl("HDMI Out","Off", "3A 30 31 53 48 30 30 30 0D"),
-    hl("Remote Control","Vol+",      "3A 30 31 53 41 30 30 30 0D"),
-    hl("Remote Control","Vol-",      "3A 30 31 53 41 30 30 31 0D"),
-    hl("Remote Control","Up",        "3A 30 31 53 41 30 31 30 0D"),
-    hl("Remote Control","Down",      "3A 30 31 53 41 30 31 31 0D"),
-    hl("Remote Control","Left",      "3A 30 31 53 41 30 31 32 0D"),
-    hl("Remote Control","Right",     "3A 30 31 53 41 30 31 33 0D"),
-    hl("Remote Control","Enter",     "3A 30 31 53 41 30 31 34 0D"),
-    hl("Remote Control","Menu",      "3A 30 31 53 41 30 32 30 0D"),
-    hl("Remote Control","Input",     "3A 30 31 53 41 30 32 31 0D"),
-    hl("Remote Control","Back/Exit", "3A 30 31 53 41 30 32 32 0D"),
-    hl("Remote Control","Blank",     "3A 30 31 53 41 30 33 31 0D"),
-    hl("Remote Control","Freeze",    "3A 30 31 53 41 30 33 32 0D"),
-    hl("Remote Control","Mute",      "3A 30 31 53 41 30 33 33 0D"),
-    hl("Remote Control","Home",      "3A 30 31 53 41 30 33 34 0D"),
+H_SERIES_FIXED = [
+    # Power
+    h("Power","Backlight Off",    "3A 30 31 53 30 30 30 30 0D"),
+    h("Power","Backlight On",     "3A 30 31 53 30 30 30 31 0D"),
+    h("Power","Power Off",        "3A 30 31 53 30 30 30 32 0D"),
+    h("Power","Power On",         "3A 30 31 53 30 30 30 33 0D"),
+    h("Power","Screen On",        "3A 30 31 53 45 30 30 31 0D"),
+    h("Power","Screen Off",       "3A 30 31 53 45 30 30 30 0D"),
+    h("Power","Get Power State",  "3A 30 31 47 30 30 30 30 0D"),
+    # Treble
+    h("Treble","Treble -5",       "3A 30 31 53 31 2D 30 35 0D"),
+    h("Treble","Treble -3",       "3A 30 31 53 31 2D 30 33 0D"),
+    h("Treble","Treble +3",       "3A 30 31 53 31 2B 30 33 0D"),
+    h("Treble","Treble +5",       "3A 30 31 53 31 2B 30 35 0D"),
+    # Bass
+    h("Bass","Bass -5",           "3A 30 31 53 32 2D 30 35 0D"),
+    h("Bass","Bass -3",           "3A 30 31 53 32 2D 30 33 0D"),
+    h("Bass","Bass +3",           "3A 30 31 53 32 2B 30 33 0D"),
+    h("Bass","Bass +5",           "3A 30 31 53 32 2B 30 35 0D"),
+    # Balance
+    h("Balance","Balance -50",    "3A 30 31 53 33 2D 35 30 0D"),
+    h("Balance","Balance +20",    "3A 30 31 53 33 2B 32 30 0D"),
+    # Sound Mode
+    h("Sound Mode","Sound Mode Movie",     "3A 30 31 53 37 30 30 30 0D"),
+    h("Sound Mode","Sound Mode Standard",  "3A 30 31 53 37 30 30 31 0D"),
+    h("Sound Mode","Sound Mode Custom",    "3A 30 31 53 37 30 30 32 0D"),
+    h("Sound Mode","Sound Mode Classroom", "3A 30 31 53 37 30 30 33 0D"),
+    h("Sound Mode","Sound Mode Meeting",   "3A 30 31 53 37 30 30 34 0D"),
+    # Volume (mute)
+    h("Volume","Mute On",   "3A 30 31 53 39 30 30 31 0D"),
+    h("Volume","Mute Off",  "3A 30 31 53 39 30 30 30 0D"),
+    # Source
+    h("Source","Get Source State","3A 30 31 47 3A 30 30 30 0D"),
+    h("Source","HDMI 1",          "3A 30 31 53 3A 30 30 31 0D"),
+    h("Source","HDMI 2",          "3A 30 31 53 3A 30 30 32 0D"),
+    h("Source","HDMI 3",          "3A 30 31 53 3A 30 32 31 0D"),
+    h("Source","HDMI 4",          "3A 30 31 53 3A 30 32 32 0D"),
+    h("Source","Home",            "3A 30 31 53 3A 31 30 31 0D"),
+    h("Source","OPS",             "3A 30 31 53 3A 31 30 33 0D"),
+    h("Source","Display Port",    "3A 30 31 53 3A 30 30 37 0D"),
+    h("Source","USB-C",           "3A 30 31 53 3A 31 30 34 0D"),
+    h("Source","USB-C 2",         "3A 30 31 53 3A 31 30 35 0D","AVE-9200 only"),
+    h("Source","Get Signal Status","3A 30 31 47 4B 30 30 30 0D"),
+    # Language
+    h("Language","Language English",  "3A 30 31 53 3C 30 30 30 0D"),
+    h("Language","Language Français", "3A 30 31 53 3C 30 30 31 0D"),
+    h("Language","Language Español",  "3A 30 31 53 3C 30 30 32 0D"),
+    h("Language","Language Dutch",    "3A 30 31 53 3C 30 30 37 0D"),
+    h("Language","Language Italian",  "3A 30 31 53 3C 30 31 33 0D"),
+    # Picture Mode
+    h("Picture Mode","Picture Standard",  "3A 30 31 53 3D 30 30 30 0D"),
+    h("Picture Mode","Picture Bright",    "3A 30 31 53 3D 30 30 31 0D"),
+    h("Picture Mode","Picture Soft",      "3A 30 31 53 3D 30 30 32 0D"),
+    h("Picture Mode","Picture Customer",  "3A 30 31 53 3D 30 30 33 0D"),
+    # Color Temperature
+    h("Color Temperature","Color Temp Cool",     "3A 30 31 53 40 30 30 30 0D"),
+    h("Color Temperature","Color Temp Standard", "3A 30 31 53 40 30 30 31 0D"),
+    h("Color Temperature","Color Temp Warm",     "3A 30 31 53 40 30 30 32 0D"),
+    # IR
+    h("IR","IR Enable",  "3A 30 31 53 42 30 30 30 0D"),
+    h("IR","IR Disable", "3A 30 31 53 42 30 30 31 0D"),
+    # Speaker
+    h("Speaker","Speaker On",  "3A 30 31 53 43 30 30 31 0D"),
+    h("Speaker","Speaker Off", "3A 30 31 53 43 30 30 30 0D"),
+    # Touch
+    h("Touch","Touch On",  "3A 30 31 53 44 30 30 31 0D"),
+    h("Touch","Touch Off", "3A 30 31 53 44 30 30 30 0D"),
+    # No Signal Power Off
+    h("No Signal Power Off","No Signal Off",    "3A 30 31 53 46 30 30 30 0D"),
+    h("No Signal Power Off","No Signal 1 Min",  "3A 30 31 53 46 30 30 31 0D"),
+    h("No Signal Power Off","No Signal 3 Min",  "3A 30 31 53 46 30 30 33 0D"),
+    h("No Signal Power Off","No Signal 5 Min",  "3A 30 31 53 46 30 30 35 0D"),
+    h("No Signal Power Off","No Signal 10 Min", "3A 30 31 53 46 30 31 30 0D"),
+    h("No Signal Power Off","No Signal 15 Min", "3A 30 31 53 46 30 31 35 0D"),
+    h("No Signal Power Off","No Signal 30 Min", "3A 30 31 53 46 30 33 30 0D"),
+    h("No Signal Power Off","No Signal 45 Min", "3A 30 31 53 46 30 34 35 0D"),
+    h("No Signal Power Off","No Signal 60 Min", "3A 30 31 53 46 30 36 30 0D"),
+    # HDMI Out
+    h("HDMI Out","HDMI Out On",  "3A 30 31 53 48 30 30 31 0D"),
+    h("HDMI Out","HDMI Out Off", "3A 30 31 53 48 30 30 30 0D"),
+    # Remote Control
+    h("Remote Control","Remote Volume Up",   "3A 30 31 53 41 30 30 30 0D"),
+    h("Remote Control","Remote Volume Down", "3A 30 31 53 41 30 30 31 0D"),
+    h("Remote Control","Remote Up",          "3A 30 31 53 41 30 31 30 0D"),
+    h("Remote Control","Remote Down",        "3A 30 31 53 41 30 31 31 0D"),
+    h("Remote Control","Remote Left",        "3A 30 31 53 41 30 31 32 0D"),
+    h("Remote Control","Remote Right",       "3A 30 31 53 41 30 31 33 0D"),
+    h("Remote Control","Remote Enter",       "3A 30 31 53 41 30 31 34 0D"),
+    h("Remote Control","Remote Menu",        "3A 30 31 53 41 30 32 30 0D"),
+    h("Remote Control","Remote Input",       "3A 30 31 53 41 30 32 31 0D"),
+    h("Remote Control","Remote Back",        "3A 30 31 53 41 30 32 32 0D"),
+    h("Remote Control","Remote Blank",       "3A 30 31 53 41 30 33 31 0D"),
+    h("Remote Control","Remote Freeze",      "3A 30 31 53 41 30 33 32 0D"),
+    h("Remote Control","Remote Mute",        "3A 30 31 53 41 30 33 33 0D"),
+    h("Remote Control","Remote Home",        "3A 30 31 53 41 30 33 34 0D"),
 ]
 
-HL_VAR_CMDS = [
-    ("Volume",           "Set Volume",     "38"),
-    ("Contrast",         "Set Contrast",   "34"),
-    ("Brightness",       "Set Brightness", "35"),
-    ("Sharpness",        "Set Sharpness",  "36"),
-    ("Picture Settings", "Set Hue Color",  "3E"),
-    ("Picture Settings", "Set Backlight",  "3F"),
+H_VAR_CMDS = [
+    ("Volume",     "Set Volume",     "38"),
+    ("Contrast",   "Set Contrast",   "34"),
+    ("Brightness", "Set Brightness", "35"),
+    ("Sharpness",  "Set Sharpness",  "36"),
+    ("Picture",    "Set Hue",        "3E"),
+    ("Picture",    "Set Backlight",  "3F"),
 ]
 
-def build_hl9200():
-    rows = list(HL_FIXED)
-    for cat, name_prefix, cmd_byte in HL_VAR_CMDS:
+def build_h_series():
+    rows = list(H_SERIES_FIXED)
+    for cat, name_prefix, cmd_byte in H_VAR_CMDS:
         for lbl, hv, dv in LEVELS:
-            rows.append(hl_var(cat, name_prefix, cmd_byte, lbl, dv))
+            rows.append(h_var(cat, name_prefix, cmd_byte, lbl, dv))
     return rows
 
-# ── K-Series commands ─────────────────────────────────────────────────────────
+# ── K-Series commands (canonical) ────────────────────────────────────────────
 
 def k(cat, name, code, notes=""):
     return ("K-Series", cat, name, code, notes, 59596, "HEX")
 
 def k_vol_row(pct_label, hex_val):
-    cs = k_checksum(0x55, 0x00, 0xFF, hex_val)
+    # Opcode 0x88 (not 0xFF as documented — the PDF is wrong). Verified on
+    # AVK-5510: opcode 0x88 echoes, 0xFF times out.
+    cs = k_checksum(0x55, 0x00, 0x88, hex_val)
     return ("K-Series","Volume",f"Set Volume {pct_label}",
-            f"55 00 FF {format(hex_val,'02X')} {format(cs,'02X')}","",59596,"HEX")
+            f"55 00 88 {format(hex_val,'02X')} {format(cs,'02X')}","",59596,"HEX")
 
 def k_backlight_row(pct_label, hex_val):
     cs = k_checksum(0x55, 0x00, 0x89, hex_val)
@@ -577,28 +604,33 @@ def k_backlight_row(pct_label, hex_val):
             f"55 00 89 {format(hex_val,'02X')} {format(cs,'02X')}","",59596,"HEX")
 
 K_SERIES_FIXED = [
-    k("Power","On",                "55 00 8E 00 E3","Power On"),
-    k("Power","Off",               "55 00 8E 0F F2","Power Off"),
-    k("Power","Wake",              "AA 00 01 01 AC","Wake Up"),
-    k("Power","Standby",           "AA 00 01 00 AB","Standby"),
-    k("Power","Get Current State", "AA 00 02 00 AC"),
-    k("Remote Control","Up",       "55 00 00 01 56"),
-    k("Remote Control","Down",     "55 00 00 02 57"),
-    k("Remote Control","Left",     "55 00 00 03 58"),
-    k("Remote Control","Right",    "55 00 00 04 59"),
-    k("Remote Control","Confirm",  "55 00 00 00 55"),
-    k("Remote Control","Return/Back","55 00 0A 00 5F"),
-    k("Volume","Toggle Mute",      "55 00 1A 00 6F"),
-    k("Volume","Get Mute Status",  "AA 00 03 00 AD"),
-    k("Volume","Volume Up by 1",   "55 00 0C 00 61","Volume up by 1%"),
-    k("Volume","Volume Down by 1", "55 00 0E 00 63","Volume down by 1%"),
+    # Power
+    k("Power","Power On",        "55 00 8E 00 E3","used when device is not claimed in Fuse"),
+    k("Power","Power Off",       "55 00 8E 0F F2","used to shut down / boot Android"),
+    k("Power","Wake",            "AA 00 01 01 AC","used when device is claimed in Fuse"),
+    k("Power","Standby",         "AA 00 01 00 AB","used to enter Standby when claimed in Fuse"),
+    k("Power","Get Power State", "AA 00 02 00 AC"),
+    # Remote Control
+    k("Remote Control","Remote Up",      "55 00 00 01 56"),
+    k("Remote Control","Remote Down",    "55 00 00 02 57"),
+    k("Remote Control","Remote Left",    "55 00 00 03 58"),
+    k("Remote Control","Remote Right",   "55 00 00 04 59"),
+    k("Remote Control","Remote Confirm", "55 00 00 00 55"),
+    k("Remote Control","Remote Return",  "55 00 0A 00 5F"),
+    # Volume
+    k("Volume","Mute Toggle",      "55 00 1A 00 6F"),
+    k("Volume","Get Mute State",   "AA 00 03 00 AD"),
+    k("Volume","Volume Up",        "55 00 0C 00 61","steps 1%"),
+    k("Volume","Volume Down",      "55 00 0E 00 63","steps 1%"),
     k("Volume","Get Volume State", "AA 00 04 00 AE"),
-    k("Backlight","Get Current State","55 00 8B 00 E0"),
-    k("Source","Home",   "55 00 91 00 E6","Set Home Source"),
-    k("Source","HDMI 1", "55 00 80 08 DD","Set HDMI1 Source"),
-    k("Source","HDMI 2", "55 00 80 09 DE","Set HDMI2 Source"),
-    k("Source","USB-C",  "55 00 80 16 EB","Set USB-C Source"),
-    k("Source","Get Current State","AA 00 05 00 AF"),
+    # Backlight
+    k("Backlight","Get Backlight State","55 00 8B 00 E0"),
+    # Source
+    k("Source","Home",             "55 00 91 00 E6"),
+    k("Source","HDMI 1",           "55 00 80 08 DD"),
+    k("Source","HDMI 2",           "55 00 80 09 DE"),
+    k("Source","USB-C",            "55 00 80 16 EB"),
+    k("Source","Get Source State", "AA 00 05 00 AF"),
 ]
 
 def build_k_series():
@@ -608,7 +640,7 @@ def build_k_series():
         rows.append(k_backlight_row(lbl, hv))
     return rows
 
-# ── S-Series commands ─────────────────────────────────────────────────────────
+# ── S-Series commands (canonical) ────────────────────────────────────────────
 
 def s(cat, name, code, notes=""):
     return ("S-Series", cat, name, code, notes, 4664, "HEX")
@@ -618,103 +650,169 @@ def s_var(cat, name_prefix, cmd_byte_hex, pct_label, dec_val):
     code = f"3A 30 31 53 {cmd_byte_hex} {d} 0D"
     return ("S-Series", cat, f"{name_prefix} {pct_label}", code, "", 4664, "HEX")
 
+# TODO: add S-Series Set Treble/Bass/Balance helpers
+#   (signed 2-digit decimal after sign; ranges ±5 / ±5 / ±50)
+
 S_SERIES_FIXED = [
-    s("Power","Backlight Off", "3A 30 31 53 30 30 30 30 0D"),
-    s("Power","Backlight On",  "3A 30 31 53 30 30 30 31 0D"),
-    s("Power","Power Off",     "3A 30 31 53 30 30 30 32 0D"),
-    s("Power","Power On",      "3A 30 31 53 30 30 30 33 0D"),
-    s("Treble","-5",           "3A 30 31 53 31 2D 30 35 0D"),
-    s("Treble","-3",           "3A 30 31 53 31 2D 30 33 0D"),
-    s("Treble","+3",           "3A 30 31 53 31 2B 30 33 0D"),
-    s("Treble","+5",           "3A 30 31 53 31 2B 30 35 0D"),
-    s("Bass","-5",             "3A 30 31 53 32 2D 30 35 0D"),
-    s("Bass","-3",             "3A 30 31 53 32 2D 30 33 0D"),
-    s("Bass","+3",             "3A 30 31 53 32 2B 30 33 0D"),
-    s("Bass","+5",             "3A 30 31 53 32 2B 30 35 0D"),
-    s("Balance","-50",         "3A 30 31 53 33 2D 35 30 0D"),
-    s("Balance","+20",         "3A 30 31 53 33 2B 32 30 0D"),
-    s("Sound Mode","Standard", "3A 30 31 53 37 30 30 31 0D"),
-    s("Sound Mode","Custom",   "3A 30 31 53 37 30 30 32 0D"),
-    s("Sound Mode","Classroom","3A 30 31 53 37 30 30 33 0D"),
-    s("Sound Mode","Meeting",  "3A 30 31 53 37 30 30 34 0D"),
+    # Power
+    s("Power","Backlight Off",   "3A 30 31 53 30 30 30 30 0D"),
+    s("Power","Backlight On",    "3A 30 31 53 30 30 30 31 0D"),
+    s("Power","Power Off",       "3A 30 31 53 30 30 30 32 0D"),
+    s("Power","Power On",        "3A 30 31 53 30 30 30 33 0D"),
+    s("Power","Get Power State", "3A 30 31 47 30 30 30 30 0D"),
+    # Treble
+    s("Treble","Treble -5",        "3A 30 31 53 31 2D 30 35 0D"),
+    s("Treble","Treble -3",        "3A 30 31 53 31 2D 30 33 0D"),
+    s("Treble","Treble +3",        "3A 30 31 53 31 2B 30 33 0D"),
+    s("Treble","Treble +5",        "3A 30 31 53 31 2B 30 35 0D"),
+    s("Treble","Get Treble State", "3A 30 31 47 31 30 30 30 0D"),
+    # Bass
+    s("Bass","Bass -5",          "3A 30 31 53 32 2D 30 35 0D"),
+    s("Bass","Bass -3",          "3A 30 31 53 32 2D 30 33 0D"),
+    s("Bass","Bass +3",          "3A 30 31 53 32 2B 30 33 0D"),
+    s("Bass","Bass +5",          "3A 30 31 53 32 2B 30 35 0D"),
+    s("Bass","Get Bass State",   "3A 30 31 47 32 30 30 30 0D"),
+    # Balance
+    s("Balance","Balance -50",        "3A 30 31 53 33 2D 35 30 0D"),
+    s("Balance","Balance +20",        "3A 30 31 53 33 2B 32 30 0D"),
+    s("Balance","Get Balance State",  "3A 30 31 47 33 30 30 30 0D"),
+    # Contrast / Brightness / Sharpness Get
+    s("Contrast",  "Get Contrast State",   "3A 30 31 47 34 30 30 30 0D"),
+    s("Brightness","Get Brightness State", "3A 30 31 47 35 30 30 30 0D"),
+    s("Sharpness", "Get Sharpness State",  "3A 30 31 47 36 30 30 30 0D"),
+    # Sound Mode
+    s("Sound Mode","Sound Mode Standard",  "3A 30 31 53 37 30 30 31 0D"),
+    s("Sound Mode","Sound Mode Custom",    "3A 30 31 53 37 30 30 32 0D"),
+    s("Sound Mode","Sound Mode Classroom", "3A 30 31 53 37 30 30 33 0D"),
+    s("Sound Mode","Sound Mode Meeting",   "3A 30 31 53 37 30 30 34 0D"),
+    s("Sound Mode","Get Sound Mode State", "3A 30 31 47 37 30 30 30 0D"),
+    # Mute
     s("Mute","Mute Off",       "3A 30 31 53 39 30 30 30 0D"),
     s("Mute","Mute On",        "3A 30 31 53 39 30 30 31 0D"),
-    s("Source","VGA",          "3A 30 31 53 3A 30 30 30 0D"),
-    s("Source","HDMI 1",       "3A 30 31 53 3A 30 30 31 0D"),
-    s("Source","HDMI 2",       "3A 30 31 53 3A 30 30 32 0D"),
-    s("Source","HDMI 3",       "3A 30 31 53 3A 30 32 31 0D"),
-    s("Source","Home (Android)","3A 30 31 53 3A 31 30 31 0D"),
-    s("Source","Slot in PC",   "3A 30 31 53 3A 31 30 33 0D"),
-    s("Source","Type-C 1",     "3A 30 31 53 3A 31 30 34 0D"),
-    s("Language","English",    "3A 30 31 53 3C 30 30 30 0D"),
-    s("Language","Français",   "3A 30 31 53 3C 30 30 31 0D"),
-    s("Language","Español",    "3A 30 31 53 3C 30 30 32 0D"),
-    s("Language","繁中",        "3A 30 31 53 3C 30 30 33 0D"),
-    s("Language","简中",        "3A 30 31 53 3C 30 30 34 0D"),
-    s("Language","Português",  "3A 30 31 53 3C 30 30 35 0D"),
-    s("Language","German",     "3A 30 31 53 3C 30 30 36 0D"),
-    s("Language","Dutch",      "3A 30 31 53 3C 30 30 37 0D"),
-    s("Language","Polish",     "3A 30 31 53 3C 30 30 38 0D"),
-    s("Language","Russian",    "3A 30 31 53 3C 30 30 39 0D"),
-    s("Language","Czech",      "3A 30 31 53 3C 30 31 30 0D"),
-    s("Language","Danish",     "3A 30 31 53 3C 30 31 31 0D"),
-    s("Language","Swedish",    "3A 30 31 53 3C 30 31 32 0D"),
-    s("Language","Italian",    "3A 30 31 53 3C 30 31 33 0D"),
-    s("Language","Romanian",   "3A 30 31 53 3C 30 31 34 0D"),
-    s("Language","Norwegian",  "3A 30 31 53 3C 30 31 35 0D"),
-    s("Language","Finnish",    "3A 30 31 53 3C 30 31 36 0D"),
-    s("Language","Greek",      "3A 30 31 53 3C 30 31 37 0D"),
-    s("Language","Turkish",    "3A 30 31 53 3C 30 31 38 0D"),
-    s("Language","Arabic",     "3A 30 31 53 3C 30 31 39 0D"),
-    s("Language","Japanese",   "3A 30 31 53 3C 30 32 30 0D"),
-    s("Language","Ukrainian",  "3A 30 31 53 3C 30 32 31 0D"),
-    s("Language","Korean",     "3A 30 31 53 3C 30 32 32 0D"),
-    s("Language","Hungarian",  "3A 30 31 53 3C 30 32 33 0D"),
-    s("Language","Persian",    "3A 30 31 53 3C 30 32 34 0D"),
-    s("Language","Vietnamese", "3A 30 31 53 3C 30 32 35 0D"),
-    s("Language","Thai",       "3A 30 31 53 3C 30 32 36 0D"),
-    s("Language","Catalan",    "3A 30 31 53 3C 30 32 37 0D"),
-    s("Language","Lithuanian", "3A 30 31 53 3C 30 32 38 0D"),
-    s("Language","Croatian",   "3A 30 31 53 3C 30 32 39 0D"),
-    s("Language","Estonian",   "3A 30 31 53 3C 30 33 30 0D"),
-    s("Picture Mode","Standard",  "3A 30 31 53 3D 30 30 30 0D"),
-    s("Picture Mode","Bright",    "3A 30 31 53 3D 30 30 31 0D"),
-    s("Picture Mode","Soft",      "3A 30 31 53 3D 30 30 32 0D"),
-    s("Picture Mode","Customer",  "3A 30 31 53 3D 30 30 33 0D"),
-    s("Color Temperature","Cool",     "3A 30 31 53 40 30 30 30 0D"),
-    s("Color Temperature","Standard", "3A 30 31 53 40 30 30 31 0D"),
-    s("Color Temperature","Warm",     "3A 30 31 53 40 30 30 32 0D"),
-    s("Remote Control","Vol+",      "3A 30 31 53 41 30 30 30 0D"),
-    s("Remote Control","Vol-",      "3A 30 31 53 41 30 30 31 0D"),
-    s("Remote Control","Up",        "3A 30 31 53 41 30 31 30 0D"),
-    s("Remote Control","Down",      "3A 30 31 53 41 30 31 31 0D"),
-    s("Remote Control","Left",      "3A 30 31 53 41 30 31 32 0D"),
-    s("Remote Control","Right",     "3A 30 31 53 41 30 31 33 0D"),
-    s("Remote Control","Enter",     "3A 30 31 53 41 30 31 34 0D"),
-    s("Remote Control","Menu",      "3A 30 31 53 41 30 32 30 0D"),
-    s("Remote Control","Input",     "3A 30 31 53 41 30 32 31 0D"),
-    s("Remote Control","Back/Exit", "3A 30 31 53 41 30 32 32 0D"),
-    s("Remote Control","Blank",     "3A 30 31 53 41 30 33 31 0D"),
-    s("Remote Control","Freeze",    "3A 30 31 53 41 30 33 32 0D"),
-    s("Remote Control","Mute",      "3A 30 31 53 41 30 33 33 0D"),
-    s("Remote Control","Home",      "3A 30 31 53 41 30 33 34 0D"),
-    s("IR","Enable",  "3A 30 31 53 42 30 30 30 0D"),
-    s("IR","Disable", "3A 30 31 53 42 30 30 31 0D"),
-    s("Speaker","Off","3A 30 31 53 43 30 30 30 0D"),
-    s("Speaker","On", "3A 30 31 53 43 30 30 31 0D"),
-    s("Touch","Off",  "3A 30 31 53 44 30 30 30 0D"),
-    s("Touch","On",   "3A 30 31 53 44 30 30 31 0D"),
-    s("Screen","Off", "3A 30 31 53 45 30 30 30 0D"),
-    s("Screen","On",  "3A 30 31 53 45 30 30 31 0D"),
-    s("No Signal Power Off","Disabled",  "3A 30 31 53 46 30 30 30 0D"),
-    s("No Signal Power Off","1 Minute",  "3A 30 31 53 46 30 30 31 0D"),
-    s("No Signal Power Off","3 Minutes", "3A 30 31 53 46 30 30 33 0D"),
-    s("No Signal Power Off","5 Minutes", "3A 30 31 53 46 30 30 35 0D"),
-    s("No Signal Power Off","10 Minutes","3A 30 31 53 46 30 31 30 0D"),
-    s("No Signal Power Off","15 Minutes","3A 30 31 53 46 30 31 35 0D"),
-    s("No Signal Power Off","30 Minutes","3A 30 31 53 46 30 33 30 0D"),
-    s("No Signal Power Off","45 Minutes","3A 30 31 53 46 30 34 35 0D"),
-    s("No Signal Power Off","60 Minutes","3A 30 31 53 46 30 36 30 0D"),
+    s("Mute","Get Mute State", "3A 30 31 47 39 30 30 30 0D"),
+    # Source
+    s("Source","VGA",               "3A 30 31 53 3A 30 30 30 0D"),
+    s("Source","HDMI 1",            "3A 30 31 53 3A 30 30 31 0D"),
+    s("Source","HDMI 2",            "3A 30 31 53 3A 30 30 32 0D"),
+    s("Source","HDMI 3",            "3A 30 31 53 3A 30 32 31 0D"),
+    s("Source","Home",              "3A 30 31 53 3A 31 30 31 0D"),
+    s("Source","OPS",               "3A 30 31 53 3A 31 30 33 0D"),
+    s("Source","Type-C 1",          "3A 30 31 53 3A 31 30 34 0D"),
+    s("Source","Get Source State",  "3A 30 31 47 3A 30 30 30 0D"),
+    # Aspect Ratio (GET only)
+    s("Aspect Ratio","Get Aspect Ratio State", "3A 30 31 47 3B 30 30 30 0D","0=16:9,1=4:3,2=PTP"),
+    # Language
+    s("Language","Language English",              "3A 30 31 53 3C 30 30 30 0D"),
+    s("Language","Language Français",             "3A 30 31 53 3C 30 30 31 0D"),
+    s("Language","Language Español",              "3A 30 31 53 3C 30 30 32 0D"),
+    s("Language","Language Traditional Chinese",  "3A 30 31 53 3C 30 30 33 0D"),
+    s("Language","Language Simplified Chinese",   "3A 30 31 53 3C 30 30 34 0D"),
+    s("Language","Language Portuguese",           "3A 30 31 53 3C 30 30 35 0D"),
+    s("Language","Language German",               "3A 30 31 53 3C 30 30 36 0D"),
+    s("Language","Language Dutch",                "3A 30 31 53 3C 30 30 37 0D"),
+    s("Language","Language Polish",               "3A 30 31 53 3C 30 30 38 0D"),
+    s("Language","Language Russian",              "3A 30 31 53 3C 30 30 39 0D"),
+    s("Language","Language Czech",                "3A 30 31 53 3C 30 31 30 0D"),
+    s("Language","Language Danish",               "3A 30 31 53 3C 30 31 31 0D"),
+    s("Language","Language Swedish",              "3A 30 31 53 3C 30 31 32 0D"),
+    s("Language","Language Italian",              "3A 30 31 53 3C 30 31 33 0D"),
+    s("Language","Language Romanian",             "3A 30 31 53 3C 30 31 34 0D"),
+    s("Language","Language Norwegian",            "3A 30 31 53 3C 30 31 35 0D"),
+    s("Language","Language Finnish",              "3A 30 31 53 3C 30 31 36 0D"),
+    s("Language","Language Greek",                "3A 30 31 53 3C 30 31 37 0D"),
+    s("Language","Language Turkish",              "3A 30 31 53 3C 30 31 38 0D"),
+    s("Language","Language Arabic",               "3A 30 31 53 3C 30 31 39 0D"),
+    s("Language","Language Japanese",             "3A 30 31 53 3C 30 32 30 0D"),
+    s("Language","Language Ukrainian",            "3A 30 31 53 3C 30 32 31 0D"),
+    s("Language","Language Korean",               "3A 30 31 53 3C 30 32 32 0D"),
+    s("Language","Language Hungarian",            "3A 30 31 53 3C 30 32 33 0D"),
+    s("Language","Language Persian",              "3A 30 31 53 3C 30 32 34 0D"),
+    s("Language","Language Vietnamese",           "3A 30 31 53 3C 30 32 35 0D"),
+    s("Language","Language Thai",                 "3A 30 31 53 3C 30 32 36 0D"),
+    s("Language","Language Catalan",              "3A 30 31 53 3C 30 32 37 0D"),
+    s("Language","Language Lithuanian",           "3A 30 31 53 3C 30 32 38 0D"),
+    s("Language","Language Croatian",             "3A 30 31 53 3C 30 32 39 0D"),
+    s("Language","Language Estonian",             "3A 30 31 53 3C 30 33 30 0D"),
+    s("Language","Get Language State",            "3A 30 31 47 3C 30 30 30 0D"),
+    # Picture Mode
+    s("Picture Mode","Picture Standard",         "3A 30 31 53 3D 30 30 30 0D"),
+    s("Picture Mode","Picture Bright",           "3A 30 31 53 3D 30 30 31 0D"),
+    s("Picture Mode","Picture Soft",             "3A 30 31 53 3D 30 30 32 0D"),
+    s("Picture Mode","Picture Customer",         "3A 30 31 53 3D 30 30 33 0D"),
+    s("Picture Mode","Get Picture Mode State",   "3A 30 31 47 3D 30 30 30 0D"),
+    # Hue / Backlight Get
+    s("Hue",       "Get Hue State",       "3A 30 31 47 3E 30 30 30 0D"),
+    s("Backlight", "Get Backlight State", "3A 30 31 47 3F 30 30 30 0D"),
+    # Color Temperature
+    s("Color Temperature","Color Temp Cool",     "3A 30 31 53 40 30 30 30 0D"),
+    s("Color Temperature","Color Temp Standard", "3A 30 31 53 40 30 30 31 0D"),
+    s("Color Temperature","Color Temp Warm",     "3A 30 31 53 40 30 30 32 0D"),
+    s("Color Temperature","Get Color Temp State","3A 30 31 47 40 30 30 30 0D"),
+    # Remote Control
+    s("Remote Control","Remote Volume Up",   "3A 30 31 53 41 30 30 30 0D"),
+    s("Remote Control","Remote Volume Down", "3A 30 31 53 41 30 30 31 0D"),
+    s("Remote Control","Remote Up",          "3A 30 31 53 41 30 31 30 0D"),
+    s("Remote Control","Remote Down",        "3A 30 31 53 41 30 31 31 0D"),
+    s("Remote Control","Remote Left",        "3A 30 31 53 41 30 31 32 0D"),
+    s("Remote Control","Remote Right",       "3A 30 31 53 41 30 31 33 0D"),
+    s("Remote Control","Remote Enter",       "3A 30 31 53 41 30 31 34 0D"),
+    s("Remote Control","Remote Menu",        "3A 30 31 53 41 30 32 30 0D"),
+    s("Remote Control","Remote Input",       "3A 30 31 53 41 30 32 31 0D"),
+    s("Remote Control","Remote Back",        "3A 30 31 53 41 30 32 32 0D"),
+    s("Remote Control","Remote Blank",       "3A 30 31 53 41 30 33 31 0D"),
+    s("Remote Control","Remote Freeze",      "3A 30 31 53 41 30 33 32 0D"),
+    s("Remote Control","Remote Mute",        "3A 30 31 53 41 30 33 33 0D"),
+    s("Remote Control","Remote Home",        "3A 30 31 53 41 30 33 34 0D"),
+    # IR
+    s("IR","IR Enable",    "3A 30 31 53 42 30 30 30 0D"),
+    s("IR","IR Disable",   "3A 30 31 53 42 30 30 31 0D"),
+    s("IR","Get IR State", "3A 30 31 47 42 30 30 30 0D"),
+    # Speaker
+    s("Speaker","Speaker Off",       "3A 30 31 53 43 30 30 30 0D"),
+    s("Speaker","Speaker On",        "3A 30 31 53 43 30 30 31 0D"),
+    s("Speaker","Get Speaker State", "3A 30 31 47 43 30 30 30 0D"),
+    # Touch
+    s("Touch","Touch Off",       "3A 30 31 53 44 30 30 30 0D"),
+    s("Touch","Touch On",        "3A 30 31 53 44 30 30 31 0D"),
+    s("Touch","Get Touch State", "3A 30 31 47 44 30 30 30 0D"),
+    # Screen
+    s("Screen","Screen Off",        "3A 30 31 53 45 30 30 30 0D"),
+    s("Screen","Screen On",         "3A 30 31 53 45 30 30 31 0D"),
+    s("Screen","Get Screen State",  "3A 30 31 47 45 30 30 30 0D"),
+    # No Signal Power Off
+    s("No Signal Power Off","No Signal Disabled", "3A 30 31 53 46 30 30 30 0D"),
+    s("No Signal Power Off","No Signal 1 Min",    "3A 30 31 53 46 30 30 31 0D"),
+    s("No Signal Power Off","No Signal 3 Min",    "3A 30 31 53 46 30 30 33 0D"),
+    s("No Signal Power Off","No Signal 5 Min",    "3A 30 31 53 46 30 30 35 0D"),
+    s("No Signal Power Off","No Signal 10 Min",   "3A 30 31 53 46 30 31 30 0D"),
+    s("No Signal Power Off","No Signal 15 Min",   "3A 30 31 53 46 30 31 35 0D"),
+    s("No Signal Power Off","No Signal 30 Min",   "3A 30 31 53 46 30 33 30 0D"),
+    s("No Signal Power Off","No Signal 45 Min",   "3A 30 31 53 46 30 34 35 0D"),
+    s("No Signal Power Off","No Signal 60 Min",   "3A 30 31 53 46 30 36 30 0D"),
+    s("No Signal Power Off","Get No Signal State","3A 30 31 47 46 30 30 30 0D"),
+    # HDMI Out
+    s("HDMI Out","HDMI Out Off",        "3A 30 31 53 48 30 30 30 0D"),
+    s("HDMI Out","HDMI Out On",         "3A 30 31 53 48 30 30 31 0D"),
+    s("HDMI Out","Get HDMI Out State",  "3A 30 31 47 48 30 30 30 0D"),
+    # HDMI Encryption
+    s("HDMI Encryption","HDMI Encryption Off",       "3A 30 31 53 49 30 30 30 0D"),
+    s("HDMI Encryption","HDMI Encryption On",        "3A 30 31 53 49 30 30 31 0D"),
+    s("HDMI Encryption","Get HDMI Encryption State", "3A 30 31 47 49 30 30 30 0D"),
+    # HDMI Out Mode
+    s("HDMI Out Mode","HDMI Out Mode Off",       "3A 30 31 53 50 30 30 30 0D"),
+    s("HDMI Out Mode","HDMI Out Mode Auto",      "3A 30 31 53 50 30 30 31 0D"),
+    s("HDMI Out Mode","HDMI Out Mode HDCP 1.4",  "3A 30 31 53 50 30 30 32 0D"),
+    s("HDMI Out Mode","HDMI Out Mode HDCP 2.2",  "3A 30 31 53 50 30 30 33 0D"),
+    s("HDMI Out Mode","Get HDMI Out Mode State", "3A 30 31 47 50 30 30 30 0D"),
+    # Information
+    s("Information","Get HDCP 1.X",        "3A 30 31 47 53 30 30 30 0D"),
+    s("Information","Get HDCP 2.X",        "3A 30 31 47 53 30 30 31 0D"),
+    s("Information","Get Machine Serial",  "3A 30 31 47 53 30 30 32 0D"),
+    s("Information","Get MAC Address",     "3A 30 31 47 53 30 30 33 0D"),
+    s("Information","Get Model Name",      "3A 30 31 47 53 30 30 34 0D"),
+    s("Information","Get Model Version",   "3A 30 31 47 53 30 30 35 0D"),
+    s("Information","Get Board Serial",    "3A 30 31 47 53 30 30 36 0D"),
+    s("Information","Get Region",          "3A 30 31 47 53 30 30 37 0D"),
 ]
 
 S_VAR_CMDS = [
@@ -733,7 +831,7 @@ def build_s_series():
             rows.append(s_var(cat, name_prefix, cmd_byte, lbl, dv))
     return rows
 
-# ── X-Series commands ─────────────────────────────────────────────────────────
+# ── X-Series commands (preserved verbatim from prior seed) ───────────────────
 
 def x(cat, name, code, notes=""):
     return ("X-Series", cat, name, code, notes, 59596, "HEX")
@@ -799,53 +897,73 @@ def build_x_series():
             rows.append(x_var(cat, name_prefix, cmd_b, cat_b, lbl, hv))
     return rows
 
-# ── Models table ──────────────────────────────────────────────────────────────
+# ── Models table (now with BaudRate) ─────────────────────────────────────────
+# Baud per series:
+#   A-Series: 38400    K-Series: 38400    X-Series: 38400
+#   B-Series: 115200   E-50:     115200
+#   H-Series: 9600     S-Series: 9600     AVE-9200: 9600 (under H-Series)
 
 MODELS = [
+    # A-Series (AVA-xx20)
+    ("AVA-4320","A-Series", 38400),
+    ("AVA-5020","A-Series", 38400),
+    ("AVA-5520","A-Series", 38400),
+    ("AVA-6520","A-Series", 38400),
+    ("AVA-7520","A-Series", 38400),
+    ("AVA-8620","A-Series", 38400),
     # B-Series
-    ("AVB-4310","B-Series"),
-    ("AVB-5010","B-Series"),
-    ("AVB-5510","B-Series"),
-    ("AVB-6510","B-Series"),
-    ("AVB-7510","B-Series"),
-    ("AVB-8610","B-Series"),
+    ("AVB-4310","B-Series", 115200),
+    ("AVB-5010","B-Series", 115200),
+    ("AVB-5510","B-Series", 115200),
+    ("AVB-6510","B-Series", 115200),
+    ("AVB-7510","B-Series", 115200),
+    ("AVB-8610","B-Series", 115200),
     # E-Group1 (xx20)
-    ("AVE-6520","E-Group1"),
-    ("AVE-7520","E-Group1"),
-    ("AVE-8620","E-Group1"),
+    ("AVE-6520","E-Group1", 115200),
+    ("AVE-7520","E-Group1", 115200),
+    ("AVE-8620","E-Group1", 115200),
     # E-Group1 (xx30)
-    ("AVE-5530","E-Group1"),
-    ("AVE-6530","E-Group1"),
-    ("AVE-7530","E-Group1"),
-    ("AVE-8630","E-Group1"),
+    ("AVE-5530","E-Group1", 115200),
+    ("AVE-6530","E-Group1", 115200),
+    ("AVE-7530","E-Group1", 115200),
+    ("AVE-8630","E-Group1", 115200),
     # E-Group1 (xx30-A)
-    ("AVE-6530-A","E-Group1"),
-    ("AVE-7530-A","E-Group1"),
-    ("AVE-8630-A","E-Group1"),
+    ("AVE-6530-A","E-Group1", 115200),
+    ("AVE-7530-A","E-Group1", 115200),
+    ("AVE-8630-A","E-Group1", 115200),
     # E-Group1 (xx40)
-    ("AVE-5540","E-Group1"),
-    ("AVE-6540","E-Group1"),
-    ("AVE-7540","E-Group1"),
-    ("AVE-8640","E-Group1"),
+    ("AVE-5540","E-Group1", 115200),
+    ("AVE-6540","E-Group1", 115200),
+    ("AVE-7540","E-Group1", 115200),
+    ("AVE-8640","E-Group1", 115200),
     # E-50
-    ("AVE-5550","E-50"),
-    ("AVE-6550","E-50"),
-    ("AVE-7550","E-50"),
-    ("AVE-8650","E-50"),
-    # H/L/9200
-    ("AVE-9200","H/L/9200"),
+    ("AVE-5550","E-50", 115200),
+    ("AVE-6550","E-50", 115200),
+    ("AVE-7550","E-50", 115200),
+    ("AVE-8650","E-50", 115200),
+    # H-Series (AVH-xx20, AVL-1050-X, AVE-9200)
+    ("AVH-6520","H-Series", 9600),
+    ("AVH-7520","H-Series", 9600),
+    ("AVH-8620","H-Series", 9600),
+    ("AVL-1050-X","H-Series", 9600),
+    ("AVE-9200","H-Series", 9600),
     # K-Series
-    ("AVK-5510","K-Series"),
-    ("AVK-6510","K-Series"),
-    ("AVK-7510","K-Series"),
-    ("AVK-8610","K-Series"),
-    ("AVK-9810","K-Series"),
+    ("AVK-5510","K-Series", 38400),
+    ("AVK-6510","K-Series", 38400),
+    ("AVK-7510","K-Series", 38400),
+    ("AVK-8610","K-Series", 38400),
+    ("AVK-9810","K-Series", 38400),
+    # S-Series (AVS-xx10 / AVS-xx10E)
+    ("AVS-5510","S-Series", 9600),
+    ("AVS-6510","S-Series", 9600),
+    ("AVS-7510","S-Series", 9600),
+    ("AVS-8610","S-Series", 9600),
     # X-Series
-    ("AVX-1320","X-Series"),
-    ("AVX-1380","X-Series"),
+    ("AVX-1320","X-Series", 38400),
+    ("AVX-1380","X-Series", 38400),
 ]
 
-# ── main ──────────────────────────────────────────────────────────────────────
+# ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
     if os.path.exists(DB_PATH):
@@ -862,10 +980,10 @@ def main():
 
     all_commands = (
         build_a_series()
-        + B_SERIES
+        + build_b_series()
         + build_e_group1()
         + build_e50()
-        + build_hl9200()
+        + build_h_series()
         + build_k_series()
         + build_s_series()
         + build_x_series()
@@ -873,17 +991,19 @@ def main():
 
     cur.executemany(INSERT_DL, all_commands)
 
-    INSERT_M = "INSERT INTO Models (ModelNumber, SeriesPattern) VALUES (?,?)"
+    INSERT_M = "INSERT INTO Models (ModelNumber, SeriesPattern, BaudRate) VALUES (?,?,?)"
     cur.executemany(INSERT_M, MODELS)
 
     con.commit()
 
-    # Summary
     cur.execute("SELECT COUNT(*) FROM DeviceList")
     dl_count = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM Models")
     m_count = cur.fetchone()[0]
-    cur.execute("SELECT SeriesPattern, COUNT(*) FROM DeviceList GROUP BY SeriesPattern ORDER BY SeriesPattern")
+    cur.execute(
+        "SELECT SeriesPattern, COUNT(*) FROM DeviceList "
+        "GROUP BY SeriesPattern ORDER BY SeriesPattern"
+    )
     by_series = cur.fetchall()
 
     con.close()
@@ -891,9 +1011,10 @@ def main():
     print(f"\nDatabase created: {DB_PATH}")
     print(f"  DeviceList rows : {dl_count}")
     print(f"  Models rows     : {m_count}")
-    print(f"\nCommands by series:")
+    print("\nCommands by series:")
     for series, cnt in by_series:
         print(f"  {series:<15} {cnt:>4} commands")
+
 
 if __name__ == "__main__":
     main()

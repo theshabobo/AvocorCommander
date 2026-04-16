@@ -17,6 +17,8 @@ public sealed class MacroStepEdit : INotifyPropertyChanged
     private string _series          = string.Empty;
     private CommandEntry? _selectedCommand;
     private int    _delayMs;
+    private string _stepType        = "command";
+    private string _promptText      = string.Empty;
 
     public int    StepOrder { get => _stepOrder; set { _stepOrder = value; PC(); } }
     public string Series
@@ -33,6 +35,23 @@ public sealed class MacroStepEdit : INotifyPropertyChanged
     }
     public CommandEntry? SelectedCommand { get => _selectedCommand; set { _selectedCommand = value; PC(); } }
     public int    DelayMs    { get => _delayMs;    set { _delayMs = value; PC(); } }
+
+    /// <summary>"command" or "prompt".</summary>
+    public string StepType
+    {
+        get => _stepType;
+        set
+        {
+            _stepType = value;
+            PC();
+            PC(nameof(IsPrompt));
+            PC(nameof(IsCommand));
+        }
+    }
+    public bool IsPrompt  => string.Equals(_stepType, "prompt", StringComparison.OrdinalIgnoreCase);
+    public bool IsCommand => !IsPrompt;
+
+    public string PromptText { get => _promptText; set { _promptText = value; PC(); } }
 
     public ObservableCollection<CommandEntry> Commands { get; } = [];
 
@@ -68,9 +87,18 @@ public partial class AddEditMacroDialog : Window
             TxtNotes.Text = editing.Notes;
             foreach (var s in editing.Steps)
             {
-                var row = new MacroStepEdit(_db) { StepOrder = s.StepOrder, DelayMs = s.DelayAfterMs };
-                row.Series = s.SeriesPattern;
-                row.SelectedCommand = row.Commands.FirstOrDefault(c => c.Id == s.CommandId);
+                var row = new MacroStepEdit(_db)
+                {
+                    StepOrder  = s.StepOrder,
+                    DelayMs    = s.DelayAfterMs,
+                    StepType   = s.StepType,
+                    PromptText = s.PromptText,
+                };
+                if (row.IsCommand)
+                {
+                    row.Series = s.SeriesPattern;
+                    row.SelectedCommand = row.Commands.FirstOrDefault(c => c.Id == s.CommandId);
+                }
                 Steps.Add(row);
             }
         }
@@ -78,7 +106,17 @@ public partial class AddEditMacroDialog : Window
 
     private void AddStep_Click(object sender, RoutedEventArgs e)
     {
-        Steps.Add(new MacroStepEdit(_db) { StepOrder = Steps.Count + 1 });
+        Steps.Add(new MacroStepEdit(_db) { StepOrder = Steps.Count + 1, StepType = "command" });
+    }
+
+    private void AddPrompt_Click(object sender, RoutedEventArgs e)
+    {
+        Steps.Add(new MacroStepEdit(_db)
+        {
+            StepOrder  = Steps.Count + 1,
+            StepType   = "prompt",
+            PromptText = "Continue?",
+        });
     }
 
     private void RemoveStep_Click(object sender, RoutedEventArgs e)
@@ -129,12 +167,17 @@ public partial class AddEditMacroDialog : Window
             Notes     = TxtNotes.Text.Trim(),
             Steps     = Steps.Select((s, i) => new MacroStep
             {
-                StepOrder    = i + 1,
-                CommandId    = s.SelectedCommand?.Id ?? 0,
-                CommandName  = s.SelectedCommand?.CommandName ?? string.Empty,
+                StepOrder     = i + 1,
+                CommandId     = s.IsPrompt ? 0 : s.SelectedCommand?.Id ?? 0,
+                CommandName   = s.SelectedCommand?.CommandName ?? string.Empty,
                 SeriesPattern = s.Series,
-                DelayAfterMs = s.DelayMs,
-            }).Where(s => s.CommandId != 0).ToList(),
+                DelayAfterMs  = s.DelayMs,
+                StepType      = s.IsPrompt ? "prompt" : "command",
+                PromptText    = s.PromptText,
+            })
+            // Keep prompt rows always; drop unfilled command rows.
+            .Where(s => s.StepType == "prompt" || s.CommandId != 0)
+            .ToList(),
         };
 
         DialogResult = true;

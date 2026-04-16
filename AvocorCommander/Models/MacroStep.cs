@@ -10,6 +10,17 @@ public sealed class MacroStep
     public string SeriesPattern { get; set; } = string.Empty;
     public int    DelayAfterMs { get; set; }
 
+    /// <summary>"command" (run a DeviceList command) or "prompt" (pause for user).</summary>
+    public string StepType     { get; set; } = "command";
+
+    /// <summary>Message shown to the user when StepType == "prompt".</summary>
+    public string PromptText   { get; set; } = string.Empty;
+
+    public bool   IsPrompt  => string.Equals(StepType, "prompt", StringComparison.OrdinalIgnoreCase);
+    public bool   IsCommand => !IsPrompt;
+
     public string DelayDisplay => DelayAfterMs == 0 ? "—" : $"{DelayAfterMs} ms";
-    public string Display      => $"{StepOrder}.  {CommandName}   {DelayDisplay}";
+    public string Display      => IsPrompt
+        ? $"{StepOrder}.  [Prompt] {PromptText}"
+        : $"{StepOrder}.  {CommandName}   {DelayDisplay}";
 }

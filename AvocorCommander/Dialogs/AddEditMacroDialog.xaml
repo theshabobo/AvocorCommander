@@ -46,6 +46,9 @@
                             ToolTip="Move down" Click="MoveDown_Click" Margin="0,0,8,0"/>
                     <Button Content="&#65291; Add Step" Style="{StaticResource PrimaryButton}"
                             Padding="10,4" Click="AddStep_Click" Margin="0,0,6,0"/>
+                    <Button Content="&#65291; Add Prompt" Style="{StaticResource SecondaryButton}"
+                            Padding="10,4" Click="AddPrompt_Click" Margin="0,0,6,0"
+                            ToolTip="Adds a step that pauses the macro and asks the user to click Continue."/>
                     <Button Content="Remove" Style="{StaticResource DangerButton}"
                             Padding="10,4" Click="RemoveStep_Click"/>
                 </StackPanel>
@@ -61,22 +64,35 @@
                       FontFamily="Consolas" FontSize="12">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="#" Binding="{Binding StepOrder}" Width="35" IsReadOnly="True"/>
-                    <DataGridTemplateColumn Header="Series" Width="110">
+                    <DataGridTextColumn Header="Type" Binding="{Binding StepType}" Width="70" IsReadOnly="True"/>
+                    <DataGridTemplateColumn Header="Series / Prompt message" Width="110">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <ComboBox ItemsSource="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=AllSeries}"
-                                          SelectedItem="{Binding Series, UpdateSourceTrigger=PropertyChanged}"
-                                          Margin="2,1"/>
+                                <Grid>
+                                    <!-- Shown for command rows -->
+                                    <ComboBox ItemsSource="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=AllSeries}"
+                                              SelectedItem="{Binding Series, UpdateSourceTrigger=PropertyChanged}"
+                                              Margin="2,1"
+                                              Visibility="{Binding IsCommand, Converter={StaticResource BoolToVis}}"/>
+                                </Grid>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="Command" Width="*">
+                    <DataGridTemplateColumn Header="Command / Message" Width="*">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <ComboBox ItemsSource="{Binding Commands}"
-                                          SelectedItem="{Binding SelectedCommand, UpdateSourceTrigger=PropertyChanged}"
-                                          DisplayMemberPath="CommandName"
-                                          Margin="2,1"/>
+                                <Grid>
+                                    <!-- Command picker for command rows -->
+                                    <ComboBox ItemsSource="{Binding Commands}"
+                                              SelectedItem="{Binding SelectedCommand, UpdateSourceTrigger=PropertyChanged}"
+                                              DisplayMemberPath="CommandName"
+                                              Margin="2,1"
+                                              Visibility="{Binding IsCommand, Converter={StaticResource BoolToVis}}"/>
+                                    <!-- Prompt text for prompt rows -->
+                                    <TextBox Text="{Binding PromptText, UpdateSourceTrigger=PropertyChanged}"
+                                             Margin="2,1"
+                                             Visibility="{Binding IsPrompt, Converter={StaticResource BoolToVis}}"/>
+                                </Grid>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>

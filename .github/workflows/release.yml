@@ -1,0 +1,81 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Extract version from csproj
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$csproj = Get-Content "AvocorCommander/AvocorCommander.csproj"
+          $ver = $csproj.Project.PropertyGroup.Version | Where-Object { $_ }
+          Write-Host "Detected version: $ver"
+          "VERSION=$ver" | Out-File -Append $env:GITHUB_OUTPUT
+          "TAG=V$ver"    | Out-File -Append $env:GITHUB_OUTPUT
+
+      - name: Publish (single-file, self-contained, win-x64)
+        run: >
+          dotnet publish AvocorCommander/AvocorCommander.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:EnableCompressionInSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=none
+
+      - name: Verify publish output
+        shell: pwsh
+        run: |
+          $pubDir = "AvocorCommander/bin/Release/net8.0-windows/win-x64/publish"
+          Get-ChildItem $pubDir | Format-Table Name, Length
+          if (-not (Test-Path "$pubDir/AvocorCommander.exe")) { throw "exe not found" }
+          if (-not (Test-Path "$pubDir/AvocorCommander.db"))  { throw "db not found" }
+
+      - name: Check if tag already exists
+        id: check_tag
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.version.outputs.TAG }}"
+          git fetch --tags 2>$null
+          $exists = git tag -l $tag
+          if ($exists) {
+            Write-Host "Tag $tag already exists — skipping release."
+            "SKIP=true" | Out-File -Append $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "Tag $tag is new — will create release."
+            "SKIP=false" | Out-File -Append $env:GITHUB_OUTPUT
+          }
+
+      - name: Create GitHub Release
+        if: steps.check_tag.outputs.SKIP == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.TAG }}
+          name: Avocor Commander ${{ steps.version.outputs.TAG }}
+          body: |
+            **Avocor Commander ${{ steps.version.outputs.TAG }}**
+
+            Download `AvocorCommander.exe` and `AvocorCommander.db` below and place them in the same folder.
+            Double-click the exe to run — no installer needed. .NET runtime is bundled.
+          draft: false
+          prerelease: false
+          files: |
+            AvocorCommander/bin/Release/net8.0-windows/win-x64/publish/AvocorCommander.exe
+            AvocorCommander/bin/Release/net8.0-windows/win-x64/publish/AvocorCommander.db

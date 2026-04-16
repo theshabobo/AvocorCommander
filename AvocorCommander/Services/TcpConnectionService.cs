@@ -22,18 +22,24 @@ public sealed class TcpConnectionService : IConnectionService
         _port = port;
     }
 
+    /// <summary>Populated with the last exception message from ConnectAsync, if any.</summary>
+    public string LastError { get; private set; } = string.Empty;
+
     public async Task<bool> ConnectAsync()
     {
         await CleanupAsync();
+        LastError = string.Empty;
         try
         {
             _client = new TcpClient { ReceiveTimeout = 4000, SendTimeout = 4000 };
-            await _client.ConnectAsync(_host, _port);
+            using var cts = new CancellationTokenSource(5000);
+            await _client.ConnectAsync(_host, _port, cts.Token);
             _stream = _client.GetStream();
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            LastError = ex.Message;
             await CleanupAsync();
             return false;
         }

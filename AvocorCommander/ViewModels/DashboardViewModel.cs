@@ -116,25 +116,17 @@ public sealed class DashboardViewModel : BaseViewModel, IDisposable
 
     private async Task WakeOnLanTileAsync(DeviceStatusInfo? tile)
     {
-        if (tile == null || string.IsNullOrWhiteSpace(tile.Device.MacAddress)) return;
-        var mac = tile.Device.MacAddress.Trim();
+        if (tile == null) return;
         try
         {
-            var macBytes = mac.Split(':', '-', '.').Select(s => Convert.ToByte(s, 16)).ToArray();
-            if (macBytes.Length != 6) return;
-            var packet = new byte[6 + 16 * 6];
-            for (int i = 0; i < 6; i++) packet[i] = 0xFF;
-            for (int i = 0; i < 16; i++) Array.Copy(macBytes, 0, packet, 6 + i * 6, 6);
-            using var udp = new UdpClient();
-            udp.EnableBroadcast = true;
-            await udp.SendAsync(packet, packet.Length, new IPEndPoint(IPAddress.Broadcast, 9));
+            var result = await DeviceWakeService.WakeAsync(tile.Device, _db);
             System.Windows.Application.Current?.Dispatcher.Invoke(() =>
-                SummaryText = $"WoL sent to {tile.Device.DeviceName} ({mac})");
+                SummaryText = $"{tile.Device.DeviceName}: {result.Detail}");
         }
         catch (Exception ex)
         {
             System.Windows.Application.Current?.Dispatcher.Invoke(() =>
-                SummaryText = $"WoL failed: {ex.Message}");
+                SummaryText = $"Wake failed: {ex.Message}");
         }
     }
 

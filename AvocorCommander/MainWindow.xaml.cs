@@ -1,5 +1,6 @@
 using AvocorCommander.Dialogs;
 using AvocorCommander.Models;
+using AvocorCommander.Services;
 using AvocorCommander.ViewModels;
 using System.Windows;
 using System.Windows.Controls;
@@ -25,13 +26,23 @@ public partial class MainWindow : Window
         vm.MacroVM.AddMacroRequested      += OnAddMacro;
         vm.MacroVM.EditMacroRequested     += OnEditMacro;
 
-        vm.PanelVM.AddSceneRequested        += OnAddScene;
-        vm.PanelVM.RenameSceneRequested     += OnRenameScene;
-        vm.PanelVM.AddPageRequested         += OnAddPage;
-        vm.PanelVM.RenamePageRequested      += OnRenamePage;
-        vm.PanelVM.EditGridSlotRequested    += OnEditGridSlot;
-        vm.PanelVM.EditBottomButtonRequested += OnEditBottomButton;
-        vm.PanelVM.KioskModeChanged         += OnKioskModeChanged;
+        // Macro "pause for user" step — show modal prompt
+        vm.MacroRunner.PromptRequested    += OnMacroPromptRequested;
+    }
+
+    private void OnMacroPromptRequested(object? sender, MacroRunnerService.PromptRequest req)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            var text = $"{req.Message}\n\nMacro: {req.MacroName}\nDevice: {req.DeviceName}\n\nContinue?";
+            var result = MessageBox.Show(
+                this, text,
+                "Macro paused",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Question,
+                MessageBoxResult.OK);
+            req.Response.TrySetResult(result == MessageBoxResult.OK);
+        });
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -116,61 +127,5 @@ public partial class MainWindow : Window
         var dlg = new AddEditMacroDialog(VM.Database, macro) { Owner = this };
         if (dlg.ShowDialog() == true && dlg.Result != null)
             VM.MacroVM.UpdateMacro(dlg.Result);
-    }
-
-    // ── Panel dialog handlers ─────────────────────────────────────────────────
-
-    private void OnAddScene(object? sender, EventArgs e)
-    {
-        var dlg = new NameInputDialog("Scene name:", "Scene 1") { Owner = this };
-        if (dlg.ShowDialog() == true)
-            VM.PanelVM.AddScene(dlg.Result);
-    }
-
-    private void OnRenameScene(object? sender, PanelScene scene)
-    {
-        var dlg = new NameInputDialog("Scene name:", scene.Name) { Owner = this };
-        if (dlg.ShowDialog() == true)
-            VM.PanelVM.RenameScene(scene, dlg.Result);
-    }
-
-    private void OnAddPage(object? sender, EventArgs e)
-    {
-        var dlg = new NameInputDialog("Page name:", "Page 1") { Owner = this };
-        if (dlg.ShowDialog() == true)
-            VM.PanelVM.AddPage(dlg.Result);
-    }
-
-    private void OnRenamePage(object? sender, PanelPage page)
-    {
-        var dlg = new NameInputDialog("Page name:", page.Name) { Owner = this };
-        if (dlg.ShowDialog() == true)
-            VM.PanelVM.RenamePage(page, dlg.Result);
-    }
-
-    private void OnEditGridSlot(object? sender, PanelGridSlot slot)
-    {
-        var existing  = slot.Button?.Model;
-        var actionsA  = slot.Button?.ActionsA;
-        var actionsB  = slot.Button?.ActionsB;
-        var dlg = new EditPanelButtonDialog(VM.Database, existing, actionsA, actionsB) { Owner = this };
-        if (dlg.ShowDialog() == true && dlg.ResultButton != null)
-            VM.PanelVM.SaveGridSlot(slot, dlg.ResultButton, dlg.ResultActionsA ?? [], dlg.ResultActionsB ?? []);
-    }
-
-    private void OnEditBottomButton(object? sender, PanelButtonVM? bvm)
-    {
-        var existing = bvm?.Model;
-        var actionsA = bvm?.ActionsA;
-        var actionsB = bvm?.ActionsB;
-        var dlg = new EditPanelButtonDialog(VM.Database, existing, actionsA, actionsB) { Owner = this };
-        if (dlg.ShowDialog() == true && dlg.ResultButton != null)
-            VM.PanelVM.SaveBottomButton(bvm, dlg.ResultButton, dlg.ResultActionsA ?? [], dlg.ResultActionsB ?? []);
-    }
-
-    private void OnKioskModeChanged(object? sender, bool isKiosk)
-    {
-        SidebarBorder.Visibility = isKiosk ? Visibility.Collapsed : Visibility.Visible;
-        SidebarColumn.Width      = isKiosk ? new System.Windows.GridLength(0) : new System.Windows.GridLength(200);
     }
 }

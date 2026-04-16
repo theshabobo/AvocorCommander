@@ -30,7 +30,6 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
     public AboutViewModel     AboutVM     { get; }
     public DashboardViewModel DashboardVM { get; }
     public GroupsViewModel    GroupsVM    { get; }
-    public PanelViewModel     PanelVM     { get; }
 
     // ── Navigation ────────────────────────────────────────────────────────────
 
@@ -56,7 +55,6 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
     public ICommand NavAboutCommand     { get; }
     public ICommand NavDashboardCommand { get; }
     public ICommand NavGroupsCommand    { get; }
-    public ICommand NavPanelCommand     { get; }
     public ICommand CheckForUpdatesCommand { get; }
     public ICommand DismissBannerCommand   { get; }
 
@@ -123,7 +121,7 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
     // ── Title / version ───────────────────────────────────────────────────────
 
     public string AppTitle   => "AVOCOR COMMANDER";
-    public string AppVersion => "V3.0";
+    public string AppVersion => "V3.4.0";
 
     public BaseViewModel CurrentViewModel => CurrentSection switch
     {
@@ -137,7 +135,6 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
         "About"     => AboutVM,
         "Dashboard" => DashboardVM,
         "Groups"    => GroupsVM,
-        "Panel"     => PanelVM,
         _           => DevicesVM,
     };
 
@@ -168,7 +165,6 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
         AboutVM     = new AboutViewModel();
         DashboardVM = new DashboardViewModel(Database, Connections);
         GroupsVM    = new GroupsViewModel(Database, Connections);
-        PanelVM     = new PanelViewModel(Database, Connections);
 
         // Scheduler + MacroRunner → AuditLog live feed
         Scheduler.EntryLogged   += (_, _) =>
@@ -213,7 +209,6 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
         NavAboutCommand     = new RelayCommand(() => CurrentSection = "About");
         NavDashboardCommand = new RelayCommand(() => CurrentSection = "Dashboard");
         NavGroupsCommand    = new RelayCommand(() => CurrentSection = "Groups");
-        NavPanelCommand     = new RelayCommand(() => CurrentSection = "Panel");
 
         CheckForUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync, () => !IsUpdating);
         DismissBannerCommand   = new RelayCommand(() =>
@@ -364,9 +359,6 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
             case "Groups":
                 GroupsVM.LoadData();
                 break;
-            case "Panel":
-                PanelVM.LoadData();
-                break;
         }
         GlobalStatus = $"Section: {section}";
     }
@@ -374,7 +366,6 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
     public void Dispose()
     {
         DashboardVM.Dispose();
-        PanelVM.Dispose();
         StatusVM.Dispose();
         Scheduler.Dispose();
         Connections.Dispose();

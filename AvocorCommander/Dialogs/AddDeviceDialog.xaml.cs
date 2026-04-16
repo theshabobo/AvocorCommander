@@ -59,7 +59,7 @@ public partial class AddDeviceDialog : Window
         ChkAutoConnect.IsChecked = d.AutoConnect;
     }
 
-    // ── Model selection → auto-fill port ─────────────────────────────────────
+    // ── Model selection → auto-fill port + baud ──────────────────────────────
 
     private void CmbModel_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -87,6 +87,12 @@ public partial class AddDeviceDialog : Window
                 RdoSerial.IsChecked = true;
             }
         }
+
+        // Auto-fill the RS232 baud rate from the Models table.
+        // Data bits / parity / stop bits are fixed at 8 / None / One for every
+        // Avocor series we support, so only baud needs to vary per-model.
+        var baud = _db.GetBaudRateForModel(model);
+        CmbBaud.Text = baud.ToString();
     }
 
     // ── Connection type toggle ────────────────────────────────────────────────

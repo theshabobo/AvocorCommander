@@ -13,6 +13,7 @@ public sealed class SerialConnectionService : IConnectionService
     private SerialPort? _port;
 
     public bool IsConnected => _port?.IsOpen ?? false;
+    public string LastError { get; private set; } = string.Empty;
     public event EventHandler<byte[]>? DataReceived;
 
     public SerialConnectionService(
@@ -31,6 +32,7 @@ public sealed class SerialConnectionService : IConnectionService
 
     public Task<bool> ConnectAsync()
     {
+        LastError = string.Empty;
         try
         {
             _port = new SerialPort(_portName, _baudRate, _parity, _dataBits, _stopBits)
@@ -42,8 +44,9 @@ public sealed class SerialConnectionService : IConnectionService
             _port.Open();
             return Task.FromResult(true);
         }
-        catch
+        catch (Exception ex)
         {
+            LastError = ex.Message;
             _port?.Dispose();
             _port = null;
             return Task.FromResult(false);

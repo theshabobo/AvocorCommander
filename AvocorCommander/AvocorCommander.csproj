@@ -9,13 +9,19 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>AvocorCommander</AssemblyName>
     <RootNamespace>AvocorCommander</RootNamespace>
-    <Version>3.3.0</Version>
-    <AssemblyVersion>3.3.0.0</AssemblyVersion>
-    <FileVersion>3.3.0.0</FileVersion>
+    <Version>3.4.0</Version>
+    <AssemblyVersion>3.4.0.0</AssemblyVersion>
+    <FileVersion>3.4.0.0</FileVersion>
     <Product>Avocor Commander</Product>
     <Company>Avocor</Company>
-    <!-- Single-file publish: bundle native DLLs and suppress .pdb -->
+    <!-- Single-file publish: bundle native DLLs, compress, suppress .pdb.
+         AvocorCommander.db is copied alongside the exe (see Content Include below)
+         so the runtime can open + migrate it in-place. -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <DebugType>none</DebugType>
   </PropertyGroup>
 
@@ -25,10 +31,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="AvocorCommander.db">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-    </None>
+    <Content Include="AvocorCommander.db">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

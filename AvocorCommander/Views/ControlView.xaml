@@ -206,15 +206,30 @@
                             <TextBlock Text="Raw Command" Style="{StaticResource FieldLabel}"/>
                             <TextBox Text="{Binding RawCode, UpdateSourceTrigger=PropertyChanged}"
                                      FontFamily="Consolas" FontSize="13"
-                                     VerticalContentAlignment="Center"/>
+                                     VerticalContentAlignment="Center"
+                                     IsEnabled="{Binding IsRawCodeEditable}"
+                                     ToolTip="Raw-command override is disabled for Group / All Connected — each device sends its own series-specific code."/>
                         </StackPanel>
 
-                        <Button Grid.Column="2"
-                                Content="▶  Send Command"
-                                Style="{StaticResource PrimaryButton}"
-                                Command="{Binding SendCommand}"
-                                VerticalAlignment="Bottom"
-                                FontSize="13"/>
+                        <StackPanel Grid.Column="2" VerticalAlignment="Bottom">
+                            <Button Content="▶  Send Command"
+                                    Style="{StaticResource PrimaryButton}"
+                                    Command="{Binding SendCommand}"
+                                    FontSize="13"/>
+                            <Button Content="⚙  Test All Commands"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding TestAllCommand}"
+                                    FontSize="11"
+                                    Margin="0,6,0,0"
+                                    Visibility="{Binding IsNotTesting, Converter={StaticResource BoolToVis}}"
+                                    ToolTip="Iterates every command for each target device and logs SUCCEEDED/FAILED per send. Power commands run last to avoid cutting connection mid-test."/>
+                            <Button Content="✕  Cancel Test"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding CancelTestCommand}"
+                                    FontSize="11"
+                                    Margin="0,6,0,0"
+                                    Visibility="{Binding IsTesting, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
                     </Grid>
 
                     <!-- Wake on LAN -->
@@ -267,6 +282,12 @@
                                        VerticalAlignment="Center"/>
                             <StackPanel HorizontalAlignment="Right"
                                         Orientation="Horizontal">
+                                <Button Content="Copy"
+                                        Style="{StaticResource IconButton}"
+                                        FontSize="11"
+                                        Margin="0,0,8,0"
+                                        Command="{Binding CopyLogCommand}"
+                                        ToolTip="Copy the entire session log to the clipboard."/>
                                 <Button Content="Export"
                                         Style="{StaticResource IconButton}"
                                         FontSize="11"

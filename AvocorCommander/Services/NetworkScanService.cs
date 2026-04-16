@@ -130,10 +130,23 @@ public static class NetworkScanService
                 string hostname = await ResolveHostAsync(ip);
                 string model    = MatchModel(hint, modelSeriesMap);
 
+                // MAC discovery priority:
+                //  1. ARP cache (works when PC shares the broadcast domain with the display)
+                //  2. Series-specific "Get MAC Address" control command (works across subnets,
+                //     but only for series that expose it: E-50, S-Series, and H-Series which
+                //     uses the same envelope as S-Series)
+                arpTable.TryGetValue(ip, out var macFromArp);
+                string mac = macFromArp ?? string.Empty;
+                if (string.IsNullOrEmpty(mac))
+                {
+                    var queried = await QueryMacAsync(ip, port, hint, ct);
+                    if (!string.IsNullOrEmpty(queried)) mac = queried;
+                }
+
                 onResult(new ScanResult
                 {
                     IpAddress     = ip,
-                    MacAddress    = string.Empty,
+                    MacAddress    = mac,
                     Vendor        = hint,
                     ModelNumber   = model,
                     SeriesPattern = hint,
@@ -165,6 +178,84 @@ public static class NetworkScanService
             if (hint != null) return (port, hint);
         }
         return (0, null);
+    }
+
+    /// <summary>
+    /// Queries a display over TCP for its MAC address using the series-specific
+    /// "Get MAC Address" control command. Returns a normalised xx:xx:xx:xx:xx:xx
+    /// string on success, or null on any failure (unknown series, timeout, no
+    /// parseable MAC in response).
+    /// </summary>
+    private static async Task<string?> QueryMacAsync(string ip, int port, string series, CancellationToken ct)
+    {
+        // Only these series documented as supporting a Get MAC query.
+        // H-Series shares the S-Series frame envelope (`3A 30 31 G/S/r …`), so
+        // the same command usually works on it.
+        string? hexCode = series switch
+        {
+            "S-Series" => "3A 30 31 47 53 30 30 33 0D",
+            "H-Series" => "3A 30 31 47 53 30 30 33 0D",
+            "E-50"     => "6B 30 31 67 73 30 30 30 0D",
+            _          => null,
+        };
+        if (hexCode == null) return null;
+
+        try
+        {
+            var query = hexCode.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                               .Select(t => Convert.ToByte(t, 16))
+                               .ToArray();
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(2000);
+            using var client = new TcpClient { SendTimeout = 1500, ReceiveTimeout = 1500 };
+            await client.ConnectAsync(ip, port, cts.Token);
+            using var stream = client.GetStream();
+
+            await stream.WriteAsync(query, cts.Token);
+
+            // Read up to 256 bytes, stopping early on a CR terminator.
+            var buf   = new byte[256];
+            int total = 0;
+            using var readCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            readCts.CancelAfter(1500);
+            try
+            {
+                while (total < buf.Length)
+                {
+                    int n = await stream.ReadAsync(buf.AsMemory(total, buf.Length - total), readCts.Token);
+                    if (n <= 0) break;
+                    total += n;
+                    if (total > 0 && buf[total - 1] == 0x0D) break;
+                }
+            }
+            catch (OperationCanceledException) { /* read timed out; parse what we got */ }
+
+            if (total == 0) return null;
+
+            // Avocor displays respond with the MAC as ASCII text in the data field.
+            // Pull any 12 hex chars (optionally with : or - separators) from the reply.
+            var responseAscii = System.Text.Encoding.ASCII.GetString(buf, 0, total);
+
+            var withSep = Regex.Match(responseAscii,
+                @"([0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}");
+            if (withSep.Success) return NormaliseMac(withSep.Value);
+
+            var noSep = Regex.Match(responseAscii, @"[0-9A-Fa-f]{12}");
+            if (noSep.Success) return NormaliseMac(noSep.Value);
+
+            return null;
+        }
+        catch { return null; }
+    }
+
+    private static string NormaliseMac(string raw)
+    {
+        var clean = new string(raw.Where(c =>
+            (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')).ToArray())
+            .ToLowerInvariant();
+        if (clean.Length != 12) return raw;
+        return $"{clean[..2]}:{clean.Substring(2,2)}:{clean.Substring(4,2)}:{clean.Substring(6,2)}:{clean.Substring(8,2)}:{clean.Substring(10,2)}";
     }
 
     private static async Task<bool> TryTcpAsync(string ip, int port, CancellationToken ct)
@@ -223,10 +314,30 @@ public static class NetworkScanService
 
     private static string MatchModel(string series, Dictionary<string, string> modelSeriesMap)
     {
-        // Exact lookup: find a model whose series pattern matches the detected series
-        var match = modelSeriesMap.FirstOrDefault(kv =>
-            string.Equals(kv.Value, series, StringComparison.OrdinalIgnoreCase));
-        return match.Key ?? series;
+        var candidates = modelSeriesMap
+            .Where(kv => string.Equals(kv.Value, series, StringComparison.OrdinalIgnoreCase))
+            .Select(kv => kv.Key)
+            .ToList();
+
+        if (candidates.Count == 0) return series;
+        if (candidates.Count == 1) return candidates[0];
+
+        // Multiple models share this SeriesPattern (e.g. H-Series covers AVE-9200,
+        // AVH-6520/7520/8620, AVL-1050-X). Prefer the model whose 3rd character
+        // matches the series letter — H-Series → AVH-*, A-Series → AVA-*, etc.
+        // This surfaces the "native" model family for the series instead of the
+        // alphabetically-first cross-listed model.
+        if (series.Length > 0)
+        {
+            char wantChar = char.ToUpperInvariant(series[0]);
+            var preferred = candidates
+                .Where(m => m.Length > 2 && char.ToUpperInvariant(m[2]) == wantChar)
+                .OrderBy(m => m, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+            if (preferred != null) return preferred;
+        }
+
+        return candidates.OrderBy(m => m, StringComparer.OrdinalIgnoreCase).First();
     }
 
     private static List<string> EnumerateIPs(string start, string end)

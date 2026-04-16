@@ -160,9 +160,17 @@ public sealed class DevicesViewModel : BaseViewModel
         if (device == null) return;
         StatusMessage = $"Connecting to {device.DeviceName}…";
         bool ok = await _connMgr.ConnectAsync(device);
-        StatusMessage = ok
-            ? $"Connected: {device.DeviceName}"
-            : $"Connection failed: {device.DeviceName}";
+        if (ok)
+        {
+            StatusMessage = $"Connected: {device.DeviceName}";
+        }
+        else
+        {
+            var detail = string.IsNullOrWhiteSpace(_connMgr.LastError)
+                ? $"{device.IPAddress}:{device.Port}"
+                : $"{device.IPAddress}:{device.Port} — {_connMgr.LastError}";
+            StatusMessage = $"Connection failed: {device.DeviceName} ({detail})";
+        }
     }
 
     private async Task DisconnectAsync(DeviceEntry? device)
@@ -287,29 +295,25 @@ public sealed class DevicesViewModel : BaseViewModel
     private async Task WakeOnLanAsync(DeviceEntry? device)
     {
         if (device == null) return;
-        var mac = device.MacAddress.Trim();
-        if (string.IsNullOrEmpty(mac)) return;
         try
         {
-            var macBytes = mac.Split(':', '-', '.').Select(s => Convert.ToByte(s, 16)).ToArray();
-            if (macBytes.Length != 6) throw new FormatException("MAC must be 6 bytes.");
-            var packet = new byte[6 + 16 * 6];
-            for (int i = 0; i < 6; i++) packet[i] = 0xFF;
-            for (int i = 0; i < 16; i++) Array.Copy(macBytes, 0, packet, 6 + i * 6, 6);
-            using var udp = new UdpClient();
-            udp.EnableBroadcast = true;
-            await udp.SendAsync(packet, packet.Length, new IPEndPoint(IPAddress.Broadcast, 9));
+            var result = await DeviceWakeService.WakeAsync(device, _db);
             _db.LogCommand(new AuditLogEntry
             {
                 Timestamp     = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-                DeviceName    = device.DeviceName, DeviceAddress = device.IPAddress,
-                CommandName   = "Wake on LAN", CommandCode = mac, Success = true,
+                DeviceName    = device.DeviceName,
+                DeviceAddress = device.IPAddress,
+                CommandName   = "Wake on LAN",
+                CommandCode   = device.MacAddress,
+                Response      = result.Detail,
+                Success       = result.PowerOnAckd || result.MagicPacketSent,
+                Notes         = result.Detail,
             });
-            StatusMessage = $"WoL packet sent to {device.DeviceName} ({mac})";
+            StatusMessage = $"{device.DeviceName}: {result.Detail}";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Wake on LAN failed: {ex.Message}";
+            StatusMessage = $"Wake failed: {ex.Message}";
         }
     }
 }
