@@ -9,9 +9,9 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>AvocorCommander</AssemblyName>
     <RootNamespace>AvocorCommander</RootNamespace>
-    <Version>3.4.1</Version>
-    <AssemblyVersion>3.4.1.0</AssemblyVersion>
-    <FileVersion>3.4.1.0</FileVersion>
+    <Version>3.4.0</Version>
+    <AssemblyVersion>3.4.0.0</AssemblyVersion>
+    <FileVersion>3.4.0.0</FileVersion>
     <Product>Avocor Commander</Product>
     <Company>Avocor</Company>
     <!-- Single-file publish: bundle native DLLs, compress, suppress .pdb.

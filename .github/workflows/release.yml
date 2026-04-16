@@ -27,7 +27,7 @@ jobs:
           $ver = $csproj.Project.PropertyGroup.Version | Where-Object { $_ }
           Write-Host "Detected version: $ver"
           "VERSION=$ver" | Out-File -Append $env:GITHUB_OUTPUT
-          "TAG=V$ver"    | Out-File -Append $env:GITHUB_OUTPUT
+          "TAG=$ver"     | Out-File -Append $env:GITHUB_OUTPUT
 
       - name: Publish (single-file, self-contained, win-x64)
         run: >
