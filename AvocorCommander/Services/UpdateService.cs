@@ -63,36 +63,36 @@ public class UpdateService
 
     static UpdateService()
     {
-        // GitHub metadata API — JSON, follows redirects, authenticated
+        // GitHub metadata API — JSON, follows redirects.
+        // No auth needed for public repos (60 req/hour unauthenticated is plenty
+        // for a check every 6 hours). If the repo is private, set Token to a
+        // valid fine-grained PAT and uncomment the Authorization line.
         _api = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-        _api.DefaultRequestHeaders.UserAgent.ParseAdd("AvocorCommander/3.0");
+        _api.DefaultRequestHeaders.UserAgent.ParseAdd("AvocorCommander/3.5");
         _api.DefaultRequestHeaders.Accept
             .Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-        _api.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", Token);
+        // _api.DefaultRequestHeaders.Authorization =
+        //     new AuthenticationHeaderValue("Bearer", Token);
 
         // GitHub asset API — requests the CDN redirect URL but does NOT follow it.
-        // GitHub private assets redirect to a pre-signed CDN URL that must be
-        // fetched without an Authorization header, so we handle the redirect manually.
         var noRedirectHandler = new HttpClientHandler { AllowAutoRedirect = false };
         _apiAsset = new HttpClient(noRedirectHandler) { Timeout = TimeSpan.FromSeconds(15) };
-        _apiAsset.DefaultRequestHeaders.UserAgent.ParseAdd("AvocorCommander/3.0");
+        _apiAsset.DefaultRequestHeaders.UserAgent.ParseAdd("AvocorCommander/3.5");
         _apiAsset.DefaultRequestHeaders.Accept
             .Add(new MediaTypeWithQualityHeaderValue("application/octet-stream"));
-        _apiAsset.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", Token);
+        // _apiAsset.DefaultRequestHeaders.Authorization =
+        //     new AuthenticationHeaderValue("Bearer", Token);
 
         // CDN downloader — no auth, used to stream the actual file from the pre-signed URL
         _cdn = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
-        _cdn.DefaultRequestHeaders.UserAgent.ParseAdd("AvocorCommander/3.4");
+        _cdn.DefaultRequestHeaders.UserAgent.ParseAdd("AvocorCommander/3.5");
     }
 
     public static Version CurrentVersion =>
-        Assembly.GetExecutingAssembly().GetName().Version ?? new Version(3, 4, 0);
+        Assembly.GetExecutingAssembly().GetName().Version ?? new Version(3, 5, 0);
 
     public bool IsConfigured =>
-        RepoOwner != "YOUR_GITHUB_USERNAME" &&
-        Token     != "YOUR_FINE_GRAINED_PAT";
+        RepoOwner != "YOUR_GITHUB_USERNAME";
 
     /// <summary>Returns update info if a newer release exists, null otherwise.</summary>
     public async Task<UpdateInfo?> CheckAsync()

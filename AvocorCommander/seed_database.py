@@ -1,6 +1,10 @@
 """
-Avocor Commander V3.0 - Database Seeder
-Creates and populates AvocorCommander.db with all RS-232/IP command data.
+Avocor Commander V3.5 - Database Seeder
+Creates and populates commands.db with RS-232/IP command data only.
+
+User data (StoredDevices, Groups, Macros, etc.) is NOT in this database —
+it lives in userdata.db which is created by the app on first run and never
+replaced by updates.
 
 Command rows for A-Series, B-Series, E-50, H-Series, K-Series, S-Series
 are generated from the canonical inventory:
@@ -11,7 +15,7 @@ inventory). Models now include a BaudRate column.
 import sqlite3
 import os
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "AvocorCommander.db")
+DB_PATH = os.path.join(os.path.dirname(__file__), "commands.db")
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -58,23 +62,20 @@ CREATE TABLE IF NOT EXISTS Models (
     BaudRate      INTEGER NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS StoredDevices (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    DeviceName  TEXT,
-    ModelNumber TEXT,
-    IPAddress   TEXT,
-    Port        INTEGER,
-    BaudRate    INTEGER,
-    Notes       TEXT
-);
-
-CREATE TABLE IF NOT EXISTS MACFilter (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    MACAddress  TEXT NOT NULL UNIQUE,
-    DeviceName  TEXT,
-    Notes       TEXT
+CREATE TABLE IF NOT EXISTS OUITable (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    OUIPrefix     TEXT    NOT NULL UNIQUE,
+    SeriesLabel   TEXT    DEFAULT '',
+    SeriesPattern TEXT    NOT NULL,
+    Notes         TEXT    DEFAULT ''
 );
 """
+
+OUI_SEEDS = [
+    ("38:54:39", "Avocor S-Series (AVS-xx10)", "S-Series"),
+    ("1C:D1:D7", "Avocor B-Series (AVB-xx10)", "B-Series"),
+    ("44:37:0B", "Avocor H-Series (AVH-xx20)", "H-Series"),
+]
 
 # ── A-Series commands (canonical) ────────────────────────────────────────────
 
@@ -994,12 +995,17 @@ def main():
     INSERT_M = "INSERT INTO Models (ModelNumber, SeriesPattern, BaudRate) VALUES (?,?,?)"
     cur.executemany(INSERT_M, MODELS)
 
+    INSERT_OUI = "INSERT OR IGNORE INTO OUITable (OUIPrefix, SeriesLabel, SeriesPattern) VALUES (?,?,?)"
+    cur.executemany(INSERT_OUI, OUI_SEEDS)
+
     con.commit()
 
     cur.execute("SELECT COUNT(*) FROM DeviceList")
     dl_count = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM Models")
     m_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM OUITable")
+    oui_count = cur.fetchone()[0]
     cur.execute(
         "SELECT SeriesPattern, COUNT(*) FROM DeviceList "
         "GROUP BY SeriesPattern ORDER BY SeriesPattern"
@@ -1008,12 +1014,15 @@ def main():
 
     con.close()
 
-    print(f"\nDatabase created: {DB_PATH}")
+    print(f"\ncommands.db created: {DB_PATH}")
     print(f"  DeviceList rows : {dl_count}")
     print(f"  Models rows     : {m_count}")
+    print(f"  OUITable rows   : {oui_count}")
     print("\nCommands by series:")
     for series, cnt in by_series:
         print(f"  {series:<15} {cnt:>4} commands")
+    print("\nNote: User data (StoredDevices, Groups, Macros, etc.) is NOT in this database.")
+    print("      It lives in userdata.db, created by the app on first run.")
 
 
 if __name__ == "__main__":

@@ -46,7 +46,7 @@ jobs:
           $pubDir = "AvocorCommander/bin/Release/net8.0-windows/win-x64/publish"
           Get-ChildItem $pubDir | Format-Table Name, Length
           if (-not (Test-Path "$pubDir/AvocorCommander.exe")) { throw "exe not found" }
-          if (-not (Test-Path "$pubDir/AvocorCommander.db"))  { throw "db not found" }
+          if (-not (Test-Path "$pubDir/commands.db"))  { throw "commands.db not found" }
 
       - name: Check if tag already exists
         id: check_tag
@@ -72,10 +72,11 @@ jobs:
           body: |
             **Avocor Commander ${{ steps.version.outputs.TAG }}**
 
-            Download `AvocorCommander.exe` and `AvocorCommander.db` below and place them in the same folder.
+            Download `AvocorCommander.exe` and `commands.db` below and place them in the same folder.
             Double-click the exe to run — no installer needed. .NET runtime is bundled.
+            User data (devices, groups, macros, schedules) is stored in `userdata.db` which is created on first run and never replaced by updates.
           draft: false
           prerelease: false
           files: |
             AvocorCommander/bin/Release/net8.0-windows/win-x64/publish/AvocorCommander.exe
-            AvocorCommander/bin/Release/net8.0-windows/win-x64/publish/AvocorCommander.db
+            AvocorCommander/bin/Release/net8.0-windows/win-x64/publish/commands.db

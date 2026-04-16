@@ -5,25 +5,33 @@ using System.IO;
 namespace AvocorCommander.Services;
 
 /// <summary>
-/// Central data access layer — wraps all SQLite operations for AvocorCommander.db.
+/// Central data access layer — wraps all SQLite operations.
+/// Command/model data lives in commands.db; user data lives in userdata.db.
 /// </summary>
 public sealed class DatabaseService : IDisposable
 {
-    private readonly string _dbPath;
+    private readonly string _commandsDbPath;
+    private readonly string _userDataDbPath;
+    private readonly string _legacyDbPath;
     private readonly object _lock = new();
 
     public DatabaseService()
     {
-        _dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AvocorCommander.db");
-        EnsureSchema();
+        var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        _commandsDbPath = Path.Combine(baseDir, "commands.db");
+        _userDataDbPath = Path.Combine(baseDir, "userdata.db");
+        _legacyDbPath   = Path.Combine(baseDir, "AvocorCommander.db");
+        MigrateFromLegacyIfNeeded();
+        EnsureUserDataSchema();
+        EnsureCommandsSchema();
         ApplyCommandDbUpdate();
     }
 
-    // ── Connection factory ────────────────────────────────────────────────────
+    // ── Connection factories ─────────────────────────────────────────────────
 
-    private SqliteConnection OpenConnection()
+    private SqliteConnection OpenCommandsConnection()
     {
-        var conn = new SqliteConnection($"Data Source={_dbPath}");
+        var conn = new SqliteConnection($"Data Source={_commandsDbPath}");
         conn.Open();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "PRAGMA foreign_keys = ON;";
@@ -31,12 +39,62 @@ public sealed class DatabaseService : IDisposable
         return conn;
     }
 
-    // ── Schema bootstrap ──────────────────────────────────────────────────────
+    private SqliteConnection OpenUserDataConnection()
+    {
+        var conn = new SqliteConnection($"Data Source={_userDataDbPath}");
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA foreign_keys = ON;";
+        cmd.ExecuteNonQuery();
+        return conn;
+    }
+
+    // Cross-DB lookups (MacroSteps → DeviceList, ScheduleRules → DeviceList)
+    // are handled by querying each DB separately rather than using ATTACH,
+    // which avoids thread-safety issues with the 'cmd' alias on pooled connections.
+
+    // ── Legacy migration ─────────────────────────────────────────────────────
+
+    private void MigrateFromLegacyIfNeeded()
+    {
+        // If userdata.db already exists, nothing to migrate
+        if (File.Exists(_userDataDbPath)) return;
+
+        // If the legacy DB doesn't exist either, nothing to migrate
+        if (!File.Exists(_legacyDbPath)) return;
+
+        // Copy legacy → userdata.db
+        File.Copy(_legacyDbPath, _userDataDbPath);
+
+        // Strip command-side tables from the new userdata.db
+        try
+        {
+            using var conn = new SqliteConnection($"Data Source={_userDataDbPath}");
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                DROP TABLE IF EXISTS DeviceList;
+                DROP TABLE IF EXISTS Models;
+                DROP TABLE IF EXISTS OUITable;
+                """;
+            cmd.ExecuteNonQuery();
+        }
+        catch { /* best-effort cleanup */ }
+
+        // Rename legacy DB to .bak so it won't be re-migrated
+        try
+        {
+            File.Move(_legacyDbPath, _legacyDbPath + ".bak");
+        }
+        catch { /* if rename fails, the File.Exists guard above prevents re-run */ }
+    }
+
+    // ── Schema bootstrap ─────────────────────────────────────────────────────
 
     /// <summary>
     /// If a pending db update file exists (placed by the update batch script),
-    /// merges DeviceList and Models from it into the live database, then deletes it.
-    /// User data tables (Groups, ScheduleRules, Macros, etc.) are untouched.
+    /// merges DeviceList, Models, and OUITable from it into commands.db, then deletes it.
+    /// User data tables are untouched.
     /// </summary>
     private void ApplyCommandDbUpdate()
     {
@@ -45,10 +103,10 @@ public sealed class DatabaseService : IDisposable
 
         try
         {
-            using var conn = OpenConnection();
+            using var conn = OpenCommandsConnection();
             using var cmd  = conn.CreateCommand();
 
-            // Attach the update db and replace DeviceList + Models atomically
+            // Attach the update db and replace DeviceList + Models + OUITable atomically
             cmd.CommandText = $"ATTACH DATABASE '{updatePath.Replace("'", "''")}' AS upd;";
             cmd.ExecuteNonQuery();
 
@@ -58,6 +116,8 @@ public sealed class DatabaseService : IDisposable
                 INSERT INTO DeviceList SELECT * FROM upd.DeviceList;
                 DELETE FROM Models;
                 INSERT INTO Models SELECT * FROM upd.Models;
+                DELETE FROM OUITable;
+                INSERT INTO OUITable SELECT * FROM upd.OUITable;
                 COMMIT;
                 DETACH DATABASE upd;";
             cmd.ExecuteNonQuery();
@@ -69,10 +129,30 @@ public sealed class DatabaseService : IDisposable
         }
     }
 
-    private void EnsureSchema()
+    private void EnsureUserDataSchema()
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
+
+        // Create StoredDevices if it doesn't exist (legacy migration may have carried it over,
+        // but fresh installs need it created from scratch)
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS StoredDevices (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                DeviceName     TEXT    NOT NULL,
+                ModelNumber    TEXT    DEFAULT '',
+                IPAddress      TEXT    DEFAULT '',
+                Port           INTEGER DEFAULT 0,
+                BaudRate       INTEGER DEFAULT 9600,
+                Notes          TEXT    DEFAULT '',
+                ComPort        TEXT    DEFAULT '',
+                MacAddress     TEXT    DEFAULT '',
+                ConnectionType TEXT    DEFAULT 'TCP',
+                LastSeenAt     TEXT    DEFAULT '',
+                AutoConnect    INTEGER DEFAULT 0
+            );
+            """;
+        cmd.ExecuteNonQuery();
 
         // Migrate StoredDevices — add columns that may not exist in older DB files
         foreach (var (col, def) in new[]
@@ -92,95 +172,7 @@ public sealed class DatabaseService : IDisposable
             catch (SqliteException) { /* column already exists — safe to ignore */ }
         }
 
-        // Migrate CommandLog — add Response column if it doesn't exist
-        try
-        {
-            cmd.CommandText = "ALTER TABLE CommandLog ADD COLUMN Response TEXT DEFAULT '';";
-            cmd.ExecuteNonQuery();
-        }
-        catch (SqliteException) { /* column already exists */ }
-
-        // B-Series uses ASCII protocol — fix any rows that were inserted with the default HEX format
-        cmd.CommandText = "UPDATE DeviceList SET CommandFormat='ASCII' WHERE SeriesPattern='B-Series' AND CommandFormat='HEX';";
-        cmd.ExecuteNonQuery();
-
-        // B-Series IR commands: correct codes use short form (!IR Up, not !IR Cursor Up)
-        foreach (var (wrong, correct) in new[]
-        {
-            ("!IR Cursor Up",    "!IR Up"),
-            ("!IR Cursor Down",  "!IR Down"),
-            ("!IR Cursor Left",  "!IR Left"),
-            ("!IR Cursor Right", "!IR Right"),
-        })
-        {
-            cmd.CommandText = "UPDATE DeviceList SET CommandCode=$correct WHERE SeriesPattern='B-Series' AND CommandCode=$wrong;";
-            cmd.Parameters.Clear();
-            cmd.Parameters.AddWithValue("$correct", correct);
-            cmd.Parameters.AddWithValue("$wrong",   wrong);
-            cmd.ExecuteNonQuery();
-        }
-
-        // Migrate ScheduleRules — add history columns
-        foreach (var (col, def) in new[]
-        {
-            ("LastFiredAt", "TEXT DEFAULT ''"),
-            ("LastResult",  "TEXT DEFAULT ''"),
-        })
-        {
-            try
-            {
-                cmd.CommandText = $"ALTER TABLE ScheduleRules ADD COLUMN {col} {def};";
-                cmd.ExecuteNonQuery();
-            }
-            catch (SqliteException) { }
-        }
-
-        // Migrate Models — add per-model RS232 baud rate
-        try
-        {
-            cmd.CommandText = "ALTER TABLE Models ADD COLUMN BaudRate INTEGER DEFAULT 9600;";
-            cmd.ExecuteNonQuery();
-        }
-        catch (SqliteException) { /* column already exists */ }
-
-        // Migrate MacroSteps — add StepType + PromptText for "pause for user" steps
-        foreach (var (col, def) in new[]
-        {
-            ("StepType",   "TEXT DEFAULT 'command'"),
-            ("PromptText", "TEXT DEFAULT ''"),
-        })
-        {
-            try
-            {
-                cmd.CommandText = $"ALTER TABLE MacroSteps ADD COLUMN {col} {def};";
-                cmd.ExecuteNonQuery();
-            }
-            catch (SqliteException) { /* column already exists */ }
-        }
-
-        // One-time backfill: set BaudRate per SeriesPattern (only rows still at 0 or default 9600
-        // which haven't been explicitly set — safe to re-run because NULL/0 rows get corrected
-        // and previously-correct rows stay untouched where BaudRate already matches).
-        foreach (var (series, baud) in new[]
-        {
-            ("A-Series", 38400),
-            ("K-Series", 38400),
-            ("X-Series", 38400),
-            ("B-Series", 115200),
-            ("E-50",     115200),
-            ("AVE-9200", 9600),
-            ("S-Series", 9600),
-            ("H-Series", 9600),
-        })
-        {
-            cmd.Parameters.Clear();
-            cmd.CommandText = "UPDATE Models SET BaudRate=$b WHERE SeriesPattern=$s AND (BaudRate IS NULL OR BaudRate=0 OR BaudRate=9600);";
-            cmd.Parameters.AddWithValue("$b", baud);
-            cmd.Parameters.AddWithValue("$s", series);
-            cmd.ExecuteNonQuery();
-        }
-        cmd.Parameters.Clear();
-
+        // Create remaining user-data tables
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS Groups (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -233,12 +225,11 @@ public sealed class DatabaseService : IDisposable
                 PromptText   TEXT    NOT NULL DEFAULT '',
                 FOREIGN KEY(MacroId) REFERENCES Macros(id) ON DELETE CASCADE
             );
-            CREATE TABLE IF NOT EXISTS OUITable (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                OUIPrefix     TEXT    NOT NULL UNIQUE,
-                SeriesLabel   TEXT    DEFAULT '',
-                SeriesPattern TEXT    NOT NULL,
-                Notes         TEXT    DEFAULT ''
+            CREATE TABLE IF NOT EXISTS MACFilter (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                MACAddress TEXT    NOT NULL UNIQUE,
+                DeviceName TEXT    DEFAULT '',
+                Notes      TEXT    DEFAULT ''
             );
             CREATE TABLE IF NOT EXISTS PanelScenes (
                 Id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -281,6 +272,101 @@ public sealed class DatabaseService : IDisposable
             """;
         cmd.ExecuteNonQuery();
 
+        // Migrate CommandLog — add Response column if it doesn't exist
+        try
+        {
+            cmd.CommandText = "ALTER TABLE CommandLog ADD COLUMN Response TEXT DEFAULT '';";
+            cmd.ExecuteNonQuery();
+        }
+        catch (SqliteException) { /* column already exists */ }
+
+        // Migrate ScheduleRules — add history columns
+        foreach (var (col, def) in new[]
+        {
+            ("LastFiredAt", "TEXT DEFAULT ''"),
+            ("LastResult",  "TEXT DEFAULT ''"),
+        })
+        {
+            try
+            {
+                cmd.CommandText = $"ALTER TABLE ScheduleRules ADD COLUMN {col} {def};";
+                cmd.ExecuteNonQuery();
+            }
+            catch (SqliteException) { }
+        }
+
+        // Migrate MacroSteps — add StepType + PromptText for "pause for user" steps
+        foreach (var (col, def) in new[]
+        {
+            ("StepType",   "TEXT DEFAULT 'command'"),
+            ("PromptText", "TEXT DEFAULT ''"),
+        })
+        {
+            try
+            {
+                cmd.CommandText = $"ALTER TABLE MacroSteps ADD COLUMN {col} {def};";
+                cmd.ExecuteNonQuery();
+            }
+            catch (SqliteException) { /* column already exists */ }
+        }
+    }
+
+    private void EnsureCommandsSchema()
+    {
+        using var conn = OpenCommandsConnection();
+        using var cmd  = conn.CreateCommand();
+
+        // B-Series uses ASCII protocol — fix any rows that were inserted with the default HEX format
+        cmd.CommandText = "UPDATE DeviceList SET CommandFormat='ASCII' WHERE SeriesPattern='B-Series' AND CommandFormat='HEX';";
+        cmd.ExecuteNonQuery();
+
+        // B-Series IR commands: correct codes use short form (!IR Up, not !IR Cursor Up)
+        foreach (var (wrong, correct) in new[]
+        {
+            ("!IR Cursor Up",    "!IR Up"),
+            ("!IR Cursor Down",  "!IR Down"),
+            ("!IR Cursor Left",  "!IR Left"),
+            ("!IR Cursor Right", "!IR Right"),
+        })
+        {
+            cmd.CommandText = "UPDATE DeviceList SET CommandCode=$correct WHERE SeriesPattern='B-Series' AND CommandCode=$wrong;";
+            cmd.Parameters.Clear();
+            cmd.Parameters.AddWithValue("$correct", correct);
+            cmd.Parameters.AddWithValue("$wrong",   wrong);
+            cmd.ExecuteNonQuery();
+        }
+
+        // Migrate Models — add per-model RS232 baud rate
+        try
+        {
+            cmd.CommandText = "ALTER TABLE Models ADD COLUMN BaudRate INTEGER DEFAULT 9600;";
+            cmd.ExecuteNonQuery();
+        }
+        catch (SqliteException) { /* column already exists */ }
+
+        // One-time backfill: set BaudRate per SeriesPattern (only rows still at 0 or default 9600
+        // which haven't been explicitly set — safe to re-run because NULL/0 rows get corrected
+        // and previously-correct rows stay untouched where BaudRate already matches).
+        foreach (var (series, baud) in new[]
+        {
+            ("A-Series", 38400),
+            ("K-Series", 38400),
+            ("X-Series", 38400),
+            ("B-Series", 115200),
+            ("E-50",     115200),
+            ("AVE-9200", 9600),
+            ("S-Series", 9600),
+            ("H-Series", 9600),
+        })
+        {
+            cmd.Parameters.Clear();
+            cmd.CommandText = "UPDATE Models SET BaudRate=$b WHERE SeriesPattern=$s AND (BaudRate IS NULL OR BaudRate=0 OR BaudRate=9600);";
+            cmd.Parameters.AddWithValue("$b", baud);
+            cmd.Parameters.AddWithValue("$s", series);
+            cmd.ExecuteNonQuery();
+        }
+        cmd.Parameters.Clear();
+
         // Seed known Avocor OUI prefixes. INSERT OR IGNORE keeps the table
         // stable across launches (won't overwrite user-added prefixes).
         foreach (var (prefix, label, series) in new[]
@@ -306,12 +392,12 @@ public sealed class DatabaseService : IDisposable
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  STORED DEVICES
+    //  STORED DEVICES  (userdata.db)
     // ══════════════════════════════════════════════════════════════════════════
 
     public List<DeviceEntry> GetAllDevices()
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             SELECT id, DeviceName, ModelNumber, IPAddress, Port,
@@ -349,7 +435,7 @@ public sealed class DatabaseService : IDisposable
 
     public int InsertDevice(DeviceEntry d)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             INSERT INTO StoredDevices
@@ -375,7 +461,7 @@ public sealed class DatabaseService : IDisposable
 
     public void UpdateDevice(DeviceEntry d)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             UPDATE StoredDevices
@@ -401,7 +487,7 @@ public sealed class DatabaseService : IDisposable
 
     public void DeleteDevice(int id)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM StoredDevices WHERE id=$id;";
         cmd.Parameters.AddWithValue("$id", id);
@@ -412,12 +498,12 @@ public sealed class DatabaseService : IDisposable
         GetAllDevices().Where(d => d.AutoConnect).ToList();
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  COMMANDS (DeviceList)
+    //  COMMANDS (DeviceList)  (commands.db)
     // ══════════════════════════════════════════════════════════════════════════
 
     public List<CommandEntry> GetCommandsBySeries(string seriesPattern)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             SELECT id, SeriesPattern, CommandCategory, CommandName,
@@ -432,7 +518,7 @@ public sealed class DatabaseService : IDisposable
 
     public List<string> GetCategoriesBySeries(string seriesPattern)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "SELECT DISTINCT CommandCategory FROM DeviceList WHERE SeriesPattern=$s ORDER BY CommandCategory;";
         cmd.Parameters.AddWithValue("$s", seriesPattern);
@@ -444,7 +530,7 @@ public sealed class DatabaseService : IDisposable
 
     public List<CommandEntry> GetCommandsBySeriesAndCategory(string seriesPattern, string category)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             SELECT id, SeriesPattern, CommandCategory, CommandName,
@@ -460,7 +546,7 @@ public sealed class DatabaseService : IDisposable
 
     public List<CommandEntry> GetAllCommands()
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             SELECT id, SeriesPattern, CommandCategory, CommandName,
@@ -473,7 +559,7 @@ public sealed class DatabaseService : IDisposable
 
     public void InsertCommand(CommandEntry c)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             INSERT INTO DeviceList
@@ -486,7 +572,7 @@ public sealed class DatabaseService : IDisposable
 
     public void UpdateCommand(CommandEntry c)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             UPDATE DeviceList
@@ -501,7 +587,7 @@ public sealed class DatabaseService : IDisposable
 
     public void DeleteCommand(int id)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM DeviceList WHERE id=$id;";
         cmd.Parameters.AddWithValue("$id", id);
@@ -541,12 +627,12 @@ public sealed class DatabaseService : IDisposable
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  MODELS
+    //  MODELS  (commands.db)
     // ══════════════════════════════════════════════════════════════════════════
 
     public List<ModelEntry> GetAllModels()
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             SELECT id, ModelNumber, SeriesPattern, COALESCE(BaudRate, 9600)
@@ -568,7 +654,7 @@ public sealed class DatabaseService : IDisposable
 
     public string? GetSeriesForModel(string modelNumber)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "SELECT SeriesPattern FROM Models WHERE ModelNumber=$m LIMIT 1;";
         cmd.Parameters.AddWithValue("$m", modelNumber);
@@ -582,7 +668,7 @@ public sealed class DatabaseService : IDisposable
     /// </summary>
     public int GetBaudRateForModel(string modelNumber)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "SELECT COALESCE(BaudRate, 9600) FROM Models WHERE ModelNumber=$m LIMIT 1;";
         cmd.Parameters.AddWithValue("$m", modelNumber);
@@ -594,7 +680,7 @@ public sealed class DatabaseService : IDisposable
 
     public void InsertModel(ModelEntry m)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "INSERT OR IGNORE INTO Models (ModelNumber, SeriesPattern, BaudRate) VALUES ($m, $s, $b);";
         cmd.Parameters.AddWithValue("$m", m.ModelNumber);
@@ -605,7 +691,7 @@ public sealed class DatabaseService : IDisposable
 
     public void UpdateModel(ModelEntry m)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "UPDATE Models SET ModelNumber=$m, SeriesPattern=$s, BaudRate=$b WHERE id=$id;";
         cmd.Parameters.AddWithValue("$id", m.Id);
@@ -617,7 +703,7 @@ public sealed class DatabaseService : IDisposable
 
     public void DeleteModel(int id)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM Models WHERE id=$id;";
         cmd.Parameters.AddWithValue("$id", id);
@@ -625,12 +711,12 @@ public sealed class DatabaseService : IDisposable
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  OUI TABLE
+    //  OUI TABLE  (commands.db)
     // ══════════════════════════════════════════════════════════════════════════
 
     public List<OuiEntry> GetAllOuiEntries()
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             SELECT id, OUIPrefix, SeriesLabel, SeriesPattern, COALESCE(Notes,'')
@@ -656,7 +742,7 @@ public sealed class DatabaseService : IDisposable
     {
         if (macAddress.Length < 8) return null;
         string prefix = macAddress[..8].ToUpperInvariant().Replace("-", ":");
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "SELECT SeriesPattern FROM OUITable WHERE OUIPrefix=$p LIMIT 1;";
         cmd.Parameters.AddWithValue("$p", prefix);
@@ -665,7 +751,7 @@ public sealed class DatabaseService : IDisposable
 
     public void InsertOuiEntry(OuiEntry e)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "INSERT INTO OUITable (OUIPrefix, SeriesLabel, SeriesPattern, Notes) VALUES ($p,$l,$s,$n);";
         cmd.Parameters.AddWithValue("$p", e.OUIPrefix);
@@ -677,7 +763,7 @@ public sealed class DatabaseService : IDisposable
 
     public void UpdateOuiEntry(OuiEntry e)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "UPDATE OUITable SET OUIPrefix=$p, SeriesLabel=$l, SeriesPattern=$s, Notes=$n WHERE id=$id;";
         cmd.Parameters.AddWithValue("$id", e.Id);
@@ -690,7 +776,7 @@ public sealed class DatabaseService : IDisposable
 
     public void DeleteOuiEntry(int id)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM OUITable WHERE id=$id;";
         cmd.Parameters.AddWithValue("$id", id);
@@ -698,12 +784,12 @@ public sealed class DatabaseService : IDisposable
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  GROUPS
+    //  GROUPS  (userdata.db)
     // ══════════════════════════════════════════════════════════════════════════
 
     public List<GroupEntry> GetAllGroups()
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "SELECT id, GroupName, COALESCE(Notes,'') FROM Groups ORDER BY GroupName;";
         var list = new List<GroupEntry>();
@@ -726,7 +812,7 @@ public sealed class DatabaseService : IDisposable
 
     public int InsertGroup(GroupEntry g)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "INSERT INTO Groups (GroupName, Notes) VALUES ($n,$notes); SELECT last_insert_rowid();";
         cmd.Parameters.AddWithValue("$n",     g.GroupName);
@@ -736,7 +822,7 @@ public sealed class DatabaseService : IDisposable
 
     public void UpdateGroup(GroupEntry g)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "UPDATE Groups SET GroupName=$n, Notes=$notes WHERE id=$id;";
         cmd.Parameters.AddWithValue("$id",    g.Id);
@@ -747,7 +833,7 @@ public sealed class DatabaseService : IDisposable
 
     public void DeleteGroup(int id)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM Groups WHERE id=$id;";
         cmd.Parameters.AddWithValue("$id", id);
@@ -756,7 +842,7 @@ public sealed class DatabaseService : IDisposable
 
     public void SetGroupMembers(int groupId, IEnumerable<int> deviceIds)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var tx   = conn.BeginTransaction();
         var del = conn.CreateCommand();
         del.CommandText = "DELETE FROM GroupMembers WHERE GroupId=$gid;";
@@ -775,26 +861,25 @@ public sealed class DatabaseService : IDisposable
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  SCHEDULE RULES
+    //  SCHEDULE RULES  (userdata.db, with commands.db attached for JOINs)
     // ══════════════════════════════════════════════════════════════════════════
 
     public List<ScheduleRule> GetAllScheduleRules()
     {
-        using var conn = OpenConnection();
+        // Query rules + target names from userdata.db (no cross-DB ATTACH needed)
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             SELECT r.id, r.RuleName,
                    r.DeviceId, r.GroupId, r.CommandId,
                    r.ScheduleTime, r.Recurrence, r.IsEnabled,
                    COALESCE(r.Notes,''),
-                   COALESCE(d.CommandName, '') AS CmdName,
                    COALESCE(sd.DeviceName, g.GroupName, 'Unknown') AS TargetName,
                    COALESCE(r.LastFiredAt,''),
                    COALESCE(r.LastResult,'')
             FROM   ScheduleRules r
-            LEFT   JOIN DeviceList     d  ON d.id  = r.CommandId
-            LEFT   JOIN StoredDevices  sd ON sd.id = r.DeviceId
-            LEFT   JOIN Groups         g  ON g.id  = r.GroupId
+            LEFT   JOIN StoredDevices   sd ON sd.id = r.DeviceId
+            LEFT   JOIN Groups          g  ON g.id  = r.GroupId
             ORDER  BY r.ScheduleTime;
             """;
         var list = new List<ScheduleRule>();
@@ -812,18 +897,34 @@ public sealed class DatabaseService : IDisposable
                 Recurrence   = rdr.GetString(6),
                 IsEnabled    = rdr.GetInt32(7) == 1,
                 Notes        = rdr.GetString(8),
-                CommandName  = rdr.GetString(9),
-                TargetName   = rdr.GetString(10),
-                LastFiredAt  = rdr.GetString(11),
-                LastResult   = rdr.GetString(12),
+                TargetName   = rdr.GetString(9),
+                LastFiredAt  = rdr.GetString(10),
+                LastResult   = rdr.GetString(11),
             });
         }
+
+        // Resolve CommandId → CommandName from commands.db (separate connection)
+        var commandIds = list.Where(r => r.CommandId > 0).Select(r => r.CommandId).Distinct().ToList();
+        if (commandIds.Count > 0)
+        {
+            using var cmdConn = OpenCommandsConnection();
+            using var lookup  = cmdConn.CreateCommand();
+            lookup.CommandText = $"SELECT id, CommandName FROM DeviceList WHERE id IN ({string.Join(",", commandIds)})";
+            var nameMap = new Dictionary<int, string>();
+            using var lr = lookup.ExecuteReader();
+            while (lr.Read())
+                nameMap[lr.GetInt32(0)] = lr.GetString(1);
+
+            foreach (var rule in list)
+                rule.CommandName = nameMap.TryGetValue(rule.CommandId, out var n) ? n : "";
+        }
+
         return list;
     }
 
     public int InsertScheduleRule(ScheduleRule r)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             INSERT INTO ScheduleRules
@@ -837,7 +938,7 @@ public sealed class DatabaseService : IDisposable
 
     public void UpdateScheduleRule(ScheduleRule r)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             UPDATE ScheduleRules
@@ -852,7 +953,7 @@ public sealed class DatabaseService : IDisposable
 
     public void DeleteScheduleRule(int id)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM ScheduleRules WHERE id=$id;";
         cmd.Parameters.AddWithValue("$id", id);
@@ -872,12 +973,12 @@ public sealed class DatabaseService : IDisposable
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  AUDIT / COMMAND LOG
+    //  AUDIT / COMMAND LOG  (userdata.db)
     // ══════════════════════════════════════════════════════════════════════════
 
     public void LogCommand(AuditLogEntry entry)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             INSERT INTO CommandLog
@@ -897,7 +998,7 @@ public sealed class DatabaseService : IDisposable
 
     public List<AuditLogEntry> GetCommandLog(int limit = 1000)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             SELECT id, Timestamp, COALESCE(DeviceName,''), COALESCE(DeviceAddress,''),
@@ -930,19 +1031,19 @@ public sealed class DatabaseService : IDisposable
 
     public void ClearCommandLog()
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM CommandLog;";
         cmd.ExecuteNonQuery();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  MAC FILTER
+    //  MAC FILTER  (userdata.db)
     // ══════════════════════════════════════════════════════════════════════════
 
     public List<(int Id, string Mac, string DeviceName, string Notes)> GetMacFilters()
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             SELECT id, MACAddress,
@@ -958,7 +1059,7 @@ public sealed class DatabaseService : IDisposable
 
     public void InsertMacFilter(string mac, string deviceName, string notes)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "INSERT OR IGNORE INTO MACFilter (MACAddress, DeviceName, Notes) VALUES ($m,$d,$n);";
         cmd.Parameters.AddWithValue("$m", mac);
@@ -969,7 +1070,7 @@ public sealed class DatabaseService : IDisposable
 
     public void DeleteMacFilter(int id)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM MACFilter WHERE id=$id;";
         cmd.Parameters.AddWithValue("$id", id);
@@ -977,12 +1078,12 @@ public sealed class DatabaseService : IDisposable
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  HELPERS
+    //  HELPERS  (routed to correct db)
     // ══════════════════════════════════════════════════════════════════════════
 
     public List<string> GetDistinctSeries()
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "SELECT DISTINCT SeriesPattern FROM DeviceList ORDER BY SeriesPattern;";
         var list = new List<string>();
@@ -993,7 +1094,7 @@ public sealed class DatabaseService : IDisposable
 
     public List<string> GetDistinctModelNumbers()
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "SELECT ModelNumber FROM Models ORDER BY ModelNumber;";
         var list = new List<string>();
@@ -1004,7 +1105,7 @@ public sealed class DatabaseService : IDisposable
 
     public void UpdateDeviceLastSeen(int deviceId, string timestamp)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "UPDATE StoredDevices SET LastSeenAt=$ts WHERE id=$id;";
         cmd.Parameters.AddWithValue("$ts", timestamp);
@@ -1014,7 +1115,7 @@ public sealed class DatabaseService : IDisposable
 
     public void UpdateRuleHistory(int ruleId, string firedAt, string result)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "UPDATE ScheduleRules SET LastFiredAt=$fa, LastResult=$res WHERE id=$id;";
         cmd.Parameters.AddWithValue("$fa",  firedAt);
@@ -1024,12 +1125,12 @@ public sealed class DatabaseService : IDisposable
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  MACROS
+    //  MACROS  (userdata.db; GetMacroSteps uses attached commands.db for JOIN)
     // ══════════════════════════════════════════════════════════════════════════
 
     public List<MacroEntry> GetAllMacros()
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "SELECT id, MacroName, COALESCE(Notes,'') FROM Macros ORDER BY MacroName;";
         var list = new List<MacroEntry>();
@@ -1043,14 +1144,13 @@ public sealed class DatabaseService : IDisposable
 
     public List<MacroStep> GetMacroSteps(int macroId)
     {
-        using var conn = OpenConnection();
+        // Query steps from userdata.db
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = """
             SELECT ms.id, ms.MacroId, ms.StepOrder, ms.CommandId, ms.DelayAfterMs,
-                   COALESCE(dl.CommandName,''), COALESCE(dl.SeriesPattern,''),
                    COALESCE(ms.StepType,'command'), COALESCE(ms.PromptText,'')
             FROM   MacroSteps ms
-            LEFT   JOIN DeviceList dl ON dl.id = ms.CommandId
             WHERE  ms.MacroId = $mid
             ORDER  BY ms.StepOrder;
             """;
@@ -1065,17 +1165,39 @@ public sealed class DatabaseService : IDisposable
                 StepOrder     = rdr.GetInt32(2),
                 CommandId     = rdr.GetInt32(3),
                 DelayAfterMs  = rdr.GetInt32(4),
-                CommandName   = rdr.GetString(5),
-                SeriesPattern = rdr.GetString(6),
-                StepType      = rdr.GetString(7),
-                PromptText    = rdr.GetString(8),
+                StepType      = rdr.GetString(5),
+                PromptText    = rdr.GetString(6),
             });
+
+        // Resolve CommandId → CommandName + SeriesPattern from commands.db
+        var commandIds = list.Where(s => s.IsCommand && s.CommandId > 0)
+                             .Select(s => s.CommandId).Distinct().ToList();
+        if (commandIds.Count > 0)
+        {
+            using var cmdConn = OpenCommandsConnection();
+            using var lookup  = cmdConn.CreateCommand();
+            lookup.CommandText = $"SELECT id, CommandName, SeriesPattern FROM DeviceList WHERE id IN ({string.Join(",", commandIds)})";
+            var map = new Dictionary<int, (string name, string series)>();
+            using var lr = lookup.ExecuteReader();
+            while (lr.Read())
+                map[lr.GetInt32(0)] = (lr.GetString(1), lr.GetString(2));
+
+            foreach (var step in list)
+            {
+                if (map.TryGetValue(step.CommandId, out var info))
+                {
+                    step.CommandName   = info.name;
+                    step.SeriesPattern = info.series;
+                }
+            }
+        }
+
         return list;
     }
 
     public int InsertMacro(MacroEntry m)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "INSERT INTO Macros (MacroName, Notes) VALUES ($n,$notes); SELECT last_insert_rowid();";
         cmd.Parameters.AddWithValue("$n",     m.MacroName);
@@ -1085,7 +1207,7 @@ public sealed class DatabaseService : IDisposable
 
     public void UpdateMacro(MacroEntry m)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "UPDATE Macros SET MacroName=$n, Notes=$notes WHERE id=$id;";
         cmd.Parameters.AddWithValue("$id",    m.Id);
@@ -1096,7 +1218,7 @@ public sealed class DatabaseService : IDisposable
 
     public void DeleteMacro(int id)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM Macros WHERE id=$id;";
         cmd.Parameters.AddWithValue("$id", id);
@@ -1105,7 +1227,7 @@ public sealed class DatabaseService : IDisposable
 
     public void SetMacroSteps(int macroId, IEnumerable<MacroStep> steps)
     {
-        using var conn = OpenConnection();
+        using var conn = OpenUserDataConnection();
         using var tx   = conn.BeginTransaction();
         var del = conn.CreateCommand();
         del.CommandText = "DELETE FROM MacroSteps WHERE MacroId=$mid;";
@@ -1131,10 +1253,10 @@ public sealed class DatabaseService : IDisposable
         tx.Commit();
     }
 
-    /// <summary>Returns the OUI prefix → series mapping for use by NetworkScanService.</summary>
+    /// <summary>Returns the OUI prefix -> series mapping for use by NetworkScanService.</summary>
     public Dictionary<string, string> GetOuiSeriesMap()
     {
-        using var conn = OpenConnection();
+        using var conn = OpenCommandsConnection();
         using var cmd  = conn.CreateCommand();
         cmd.CommandText = "SELECT OUIPrefix, SeriesPattern FROM OUITable;";
         var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -1144,5 +1266,5 @@ public sealed class DatabaseService : IDisposable
         return dict;
     }
 
-    public void Dispose() { /* connection is opened/closed per call — nothing to dispose */ }
+    public void Dispose() { /* connections are opened/closed per call — nothing to dispose */ }
 }

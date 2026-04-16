@@ -121,7 +121,7 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
     // ── Title / version ───────────────────────────────────────────────────────
 
     public string AppTitle   => "AVOCOR COMMANDER";
-    public string AppVersion => "V3.4.4";
+    public string AppVersion => "V3.5.0";
 
     public BaseViewModel CurrentViewModel => CurrentSection switch
     {
