@@ -37,6 +37,16 @@
                 <StackPanel HorizontalAlignment="Right"
                             Orientation="Horizontal"
                             VerticalAlignment="Center">
+                    <Button Content="↓  Import"
+                            Style="{StaticResource SecondaryButton}"
+                            Command="{Binding ImportDevicesCommand}"
+                            ToolTip="Import devices from a JSON file"
+                            Margin="0,0,8,0"/>
+                    <Button Content="↑  Export"
+                            Style="{StaticResource SecondaryButton}"
+                            Command="{Binding ExportDevicesCommand}"
+                            ToolTip="Export all devices to a JSON file"
+                            Margin="0,0,8,0"/>
                     <Button Content="⌕  Scan Network"
                             Style="{StaticResource SecondaryButton}"
                             Command="{Binding ScanNetworkCommand}"
