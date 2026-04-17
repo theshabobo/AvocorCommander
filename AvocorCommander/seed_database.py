@@ -593,11 +593,11 @@ def k(cat, name, code, notes=""):
     return ("K-Series", cat, name, code, notes, 59596, "HEX")
 
 def k_vol_row(pct_label, hex_val):
-    # Opcode 0x88 (not 0xFF as documented — the PDF is wrong). Verified on
-    # AVK-5510: opcode 0x88 echoes, 0xFF times out.
-    cs = k_checksum(0x55, 0x00, 0x88, hex_val)
+    # Opcode 0x0F (not 0xFF as documented, not 0x88 as previously tested).
+    # 0x88 echoes but doesn't change volume; 0x0F is the correct SET Volume opcode.
+    cs = k_checksum(0x55, 0x00, 0x0F, hex_val)
     return ("K-Series","Volume",f"Set Volume {pct_label}",
-            f"55 00 88 {format(hex_val,'02X')} {format(cs,'02X')}","",59596,"HEX")
+            f"55 00 0F {format(hex_val,'02X')} {format(cs,'02X')}","",59596,"HEX")
 
 def k_backlight_row(pct_label, hex_val):
     cs = k_checksum(0x55, 0x00, 0x89, hex_val)
