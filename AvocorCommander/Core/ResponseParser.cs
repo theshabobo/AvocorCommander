@@ -29,9 +29,9 @@ public static class ResponseParser
             var s when s.Contains("E-50")
                 => ParseE50(response),
             var s when s.Contains("A-Series")
-                => ParseASeries(response),
+                => ParseASeries(response, sentBytes),
             var s when s.Contains("B-Series")
-                => DecodeAscii(response),
+                => ParseBSeries(response),
             _ => null
         };
         if (!string.IsNullOrEmpty(specific)) return specific;
@@ -466,7 +466,7 @@ public static class ResponseParser
     // GET reply:  just the 2-hex value               e.g. "32"       (current value)
     // prefix 'k' = display commands, 'm' = remote/OSD commands.
 
-    private static string? ParseASeries(byte[] rx)
+    private static string? ParseASeries(byte[] rx, byte[]? sent = null)
     {
         if (!LooksLikeMostlyAscii(rx)) return null;
         var s = Encoding.ASCII.GetString(rx).Trim('\0', ' ', '\r', '\n', '\t');
@@ -487,14 +487,53 @@ public static class ResponseParser
             return DescribeASeriesSet(prefix, cmd, setVal, tokens[2]);
         }
 
-        // GET-reply: bare 2-hex value (e.g. "32" → 50)
+        // GET-reply: bare 2-hex value (e.g. "32" → 50).
+        // Use the sent command byte to determine what the value means.
+        // A-Series sent frame: byte[0]=prefix(6B/6D), byte[1]=cmdChar, bytes[2-3]=ID, bytes[4-5]=query(ff)
         if (s.Length == 2 && int.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int getVal))
+        {
+            if (sent != null && sent.Length >= 2)
+            {
+                char sentPrefix = char.ToLowerInvariant((char)sent[0]);
+                char sentCmd    = char.ToLowerInvariant((char)sent[1]);
+                return DescribeASeriesGet(sentPrefix, sentCmd, getVal);
+            }
             return $"Value = {getVal} (0x{getVal:X2})";
+        }
 
         if (s.All(c => char.IsDigit(c) || char.IsLetter(c)))
             return $"Reply = {s}";
 
         return $"Reply = {s}";
+    }
+
+    /// <summary>Decodes A-Series GET response values using the sent command byte for context.</summary>
+    private static string DescribeASeriesGet(char prefix, char cmd, int val)
+    {
+        if (prefix == 'k') return cmd switch
+        {
+            'a' => val switch { 0 => "Power is OFF", 1 => "Power is ON", _ => $"Power state = {val}" },
+            'b' => $"Current source = {InputNameA(val)}",
+            'c' => val switch { 1 => "Aspect = 16:9", 2 => "Aspect = 4:3", 5 => "Aspect = P2P", _ => $"Aspect = code {val}" },
+            'e' => val switch { 0 => "Mute is OFF", 1 => "Mute is ON", _ => $"Mute = {val}" },
+            'f' => $"Volume = {val}",
+            'g' => $"Contrast = {val}",
+            'h' => $"Brightness = {val}",
+            'i' => $"Saturation = {val}",
+            'o' => $"Hue = {val}",
+            'u' => val switch { 0 => "Picture Mode = Standard", 1 => "Picture Mode = Soft", 2 => "Picture Mode = Bright", 3 => "Picture Mode = Customer", _ => $"Picture Mode = code {val}" },
+            'z' => val switch { 0 => "Freeze is OFF", 1 => "Freeze is ON", _ => $"Freeze = {val}" },
+            _   => $"Value = {val} (cmd={cmd})"
+        };
+
+        if (prefix == 'm') return cmd switch
+        {
+            's' => val switch { 0 => "Remote control is OFF", 1 => "Remote control is ON", _ => $"Remote = {val}" },
+            'o' => val switch { 0 => "OSD Lock is OFF", 1 => "OSD Lock is ON", _ => $"OSD Lock = {val}" },
+            _   => $"Value = {val} (cmd=m{cmd})"
+        };
+
+        return $"Value = {val} (0x{val:X2})";
     }
 
     private static string DescribeASeriesSet(char prefix, char cmd, int val, string hex)
@@ -555,6 +594,71 @@ public static class ResponseParser
         0xAC => "Source",
         _    => $"0x{code:X2}"
     };
+
+    // ── B-Series ──────────────────────────────────────────────────────────────
+    // ASCII protocol: responses start with "~" followed by the response text.
+    // e.g. "~Power On", "~Volume 50", "~Mute Off", "~Error !Power On"
+
+    private static string? ParseBSeries(byte[] rx)
+    {
+        if (!LooksLikeMostlyAscii(rx)) return null;
+        var s = Encoding.ASCII.GetString(rx).Trim('\0', '\r', '\n', ' ', '\t');
+        if (string.IsNullOrWhiteSpace(s)) return null;
+
+        // Strip the ~ prefix
+        if (s.StartsWith('~'))
+            s = s[1..].Trim();
+
+        if (string.IsNullOrEmpty(s)) return "Accepted";
+
+        // Error response: "Error <original command>"
+        if (s.StartsWith("Error", StringComparison.OrdinalIgnoreCase))
+            return "Rejected (" + s + ")";
+
+        // Status query responses: "Power On", "Volume 50", "Mute Off", etc.
+        // These are already human-readable — just return them with context.
+
+        // Power state
+        if (s.Equals("Power On", StringComparison.OrdinalIgnoreCase))
+            return "Power is ON";
+        if (s.Equals("Power Off", StringComparison.OrdinalIgnoreCase))
+            return "Power is OFF (standby)";
+
+        // Mute state
+        if (s.Equals("Mute On", StringComparison.OrdinalIgnoreCase))
+            return "Mute is ON";
+        if (s.Equals("Mute Off", StringComparison.OrdinalIgnoreCase))
+            return "Mute is OFF";
+
+        // Volume / Backlight with numeric value: "Volume 50", "Backlight 75"
+        if (s.StartsWith("Volume ", StringComparison.OrdinalIgnoreCase) && s.Length > 7)
+        {
+            var numPart = s[7..].Trim();
+            if (int.TryParse(numPart, out int vol))
+                return $"Volume = {vol}";
+        }
+        if (s.StartsWith("Backlight ", StringComparison.OrdinalIgnoreCase) && s.Length > 10)
+        {
+            var numPart = s[10..].Trim();
+            if (int.TryParse(numPart, out int bl))
+                return $"Backlight = {bl}";
+        }
+
+        // Input responses: "Input HDMI 1", "Input Android 1", etc.
+        if (s.StartsWith("Input ", StringComparison.OrdinalIgnoreCase))
+            return $"Current source = {s[6..].Trim()}";
+
+        // Status responses: "Status HDMI 1 Connected", etc.
+        if (s.StartsWith("Status ", StringComparison.OrdinalIgnoreCase))
+            return s;
+
+        // IR responses (echo of what was sent without the !)
+        if (s.StartsWith("IR ", StringComparison.OrdinalIgnoreCase))
+            return "Accepted";
+
+        // Generic: already readable text — return as-is
+        return s;
+    }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 

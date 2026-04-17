@@ -94,7 +94,7 @@
     }
 
     function getCurrentTheme() {
-        return localStorage.getItem('theme') || 'avocor';
+        return localStorage.getItem('theme') || 'dark';
     }
 
     applyTheme(getCurrentTheme());
@@ -544,7 +544,7 @@
             '<div class="flex items-center justify-between mb-16">' +
                 '<div class="text-muted text-sm" id="devices-count"></div>' +
                 '<div class="flex gap-8">' +
-                    '<button class="btn btn-secondary btn-sm" id="scan-network-btn">\uD83D\uDD0D Import from Scan (Desktop)</button>' +
+                    '<button class="btn btn-secondary btn-sm" id="scan-network-btn">\uD83D\uDD0D Scan Network</button>' +
                     '<button class="btn btn-primary btn-sm" id="add-device-btn">+ Add Device</button>' +
                 '</div>' +
             '</div>' +
@@ -635,17 +635,173 @@
     // Scan Network modal
     function showScanNetworkModal() {
         var body = '' +
-            '<div style="padding:24px;text-align:center">' +
-                '<div style="font-size:48px;margin-bottom:16px">\uD83D\uDD0D</div>' +
-                '<h3 style="margin-bottom:12px;color:var(--text-primary)">Network Scanning</h3>' +
-                '<p style="color:var(--text-secondary);margin-bottom:16px">Scan Network requires the desktop application. It uses ICMP pings and TCP probes to discover Avocor displays on the network.</p>' +
-                '<p style="color:var(--text-secondary)">Devices discovered via scan in the desktop app will appear here automatically.</p>' +
+            '<div style="padding:16px">' +
+                '<div class="form-group">' +
+                    '<label class="form-label">Start IP</label>' +
+                    '<input type="text" class="form-input" id="scan-start-ip" placeholder="192.168.1.1" />' +
+                '</div>' +
+                '<div class="form-group">' +
+                    '<label class="form-label">End IP</label>' +
+                    '<input type="text" class="form-input" id="scan-end-ip" placeholder="192.168.1.254" />' +
+                '</div>' +
+                '<div id="scan-progress" style="display:none;margin-top:12px">' +
+                    '<div style="color:var(--text-secondary);margin-bottom:8px" id="scan-progress-text">Scanning...</div>' +
+                    '<div style="background:var(--bg-tertiary);border-radius:4px;height:6px;overflow:hidden">' +
+                        '<div id="scan-progress-bar" style="background:var(--accent);height:100%;width:0%;transition:width 0.3s"></div>' +
+                    '</div>' +
+                '</div>' +
+                '<div id="scan-results" style="margin-top:16px"></div>' +
             '</div>';
 
-        showModal('Import from Scan (Desktop)', body,
-            '<button class="btn btn-secondary" data-close>Close</button>',
-            { large: false }
+        showModal('Scan Network', body,
+            '<button class="btn btn-secondary" data-close>Cancel</button>' +
+            '<button class="btn btn-primary" id="scan-start-btn">Start Scan</button>' +
+            '<button class="btn btn-primary" id="scan-add-btn" style="display:none">Add Selected</button>',
+            { large: true }
         );
+
+        var startBtn = document.getElementById('scan-start-btn');
+        var addBtn = document.getElementById('scan-add-btn');
+        if (!startBtn) return;
+
+        startBtn.addEventListener('click', async function () {
+            var startIp = document.getElementById('scan-start-ip').value.trim();
+            var endIp = document.getElementById('scan-end-ip').value.trim();
+            if (!startIp || !endIp) { toast('Enter start and end IP addresses', 'error'); return; }
+
+            startBtn.disabled = true;
+            startBtn.textContent = 'Scanning...';
+            var progressDiv = document.getElementById('scan-progress');
+            if (progressDiv) progressDiv.style.display = 'block';
+
+            try {
+                var res = await api.startScan(startIp, endIp);
+                var scanId = res.scanId;
+                var pollTimer = setInterval(async function () {
+                    try {
+                        var status = await api.getScanStatus(scanId);
+                        // Update progress
+                        var pText = document.getElementById('scan-progress-text');
+                        var pBar = document.getElementById('scan-progress-bar');
+                        if (pText && status.progress) pText.textContent = 'Scanning... ' + status.progress.done + '/' + status.progress.total;
+                        if (pBar && status.progress && status.progress.total > 0) pBar.style.width = Math.round(status.progress.done / status.progress.total * 100) + '%';
+
+                        // Show results
+                        var resultsDiv = document.getElementById('scan-results');
+                        if (resultsDiv && status.results && status.results.length > 0) {
+                            resultsDiv.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
+                                '<tr style="border-bottom:1px solid var(--border-color)">' +
+                                    '<th style="padding:6px;text-align:left"><input type="checkbox" id="scan-select-all" /></th>' +
+                                    '<th style="padding:6px;text-align:left">IP</th>' +
+                                    '<th style="padding:6px;text-align:left">MAC</th>' +
+                                    '<th style="padding:6px;text-align:left">Series</th>' +
+                                    '<th style="padding:6px;text-align:left">Model</th>' +
+                                    '<th style="padding:6px;text-align:left">Hostname</th>' +
+                                    '<th style="padding:6px;text-align:left">Status</th>' +
+                                '</tr>' +
+                                status.results.map(function (r, i) {
+                                    return '<tr style="border-bottom:1px solid var(--border-color)">' +
+                                        '<td style="padding:6px"><input type="checkbox" class="scan-result-check" data-idx="' + i + '" checked /></td>' +
+                                        '<td style="padding:6px">' + esc(r.ip) + '</td>' +
+                                        '<td style="padding:6px">' + esc(r.mac) + '</td>' +
+                                        '<td style="padding:6px">' + esc(r.series) + '</td>' +
+                                        '<td style="padding:6px">' + esc(r.model) + '</td>' +
+                                        '<td style="padding:6px">' + esc(r.hostname) + '</td>' +
+                                        '<td style="padding:6px">' + (r.online ? 'Online' : 'Offline') + '</td>' +
+                                    '</tr>';
+                                }).join('') +
+                            '</table>';
+                            if (addBtn) addBtn.style.display = '';
+
+                            var selectAll = document.getElementById('scan-select-all');
+                            if (selectAll) {
+                                selectAll.addEventListener('change', function () {
+                                    var checks = document.querySelectorAll('.scan-result-check');
+                                    checks.forEach(function (c) { c.checked = selectAll.checked; });
+                                });
+                            }
+                        }
+
+                        if (status.status === 'complete') {
+                            clearInterval(pollTimer);
+                            startBtn.textContent = 'Scan Complete';
+                            if (pText) pText.textContent = 'Scan complete. ' + (status.results ? status.results.length : 0) + ' device(s) found.';
+                            if (pBar) pBar.style.width = '100%';
+
+                            // Store results for add
+                            if (addBtn) {
+                                addBtn._scanResults = status.results || [];
+                            }
+                        }
+                    } catch (err) {
+                        clearInterval(pollTimer);
+                        toast('Scan poll error: ' + err.message, 'error');
+                    }
+                }, 2000);
+            } catch (err) {
+                toast('Scan failed: ' + err.message, 'error');
+                startBtn.disabled = false;
+                startBtn.textContent = 'Start Scan';
+            }
+        });
+
+        if (addBtn) {
+            addBtn.addEventListener('click', async function () {
+                var results = addBtn._scanResults || [];
+                var checks = document.querySelectorAll('.scan-result-check');
+
+                // Pre-fetch models and commands to look up port + baud per series
+                var models = [];
+                var commandsBySeriesCache = {};
+                try { models = await api.getModels(); } catch (e) {}
+
+                var added = 0;
+                for (var i = 0; i < checks.length; i++) {
+                    if (!checks[i].checked) continue;
+                    var r = results[i];
+                    if (!r) continue;
+
+                    // Look up port from commands DB and baud from models
+                    var series = r.series || '';
+                    var port = 0;
+                    var baudRate = 9600;
+
+                    if (series) {
+                        // Get baud from models table
+                        var matchModel = models.find(function(m) { return m.seriesPattern === series; });
+                        if (matchModel) baudRate = matchModel.baudRate || 9600;
+
+                        // Get port from first command for this series
+                        if (!commandsBySeriesCache[series]) {
+                            try { commandsBySeriesCache[series] = await api.getCommands(series); } catch (e) {}
+                        }
+                        var seriesCmds = commandsBySeriesCache[series] || [];
+                        var withPort = seriesCmds.find(function(c) { return c.port > 0; });
+                        if (withPort) port = withPort.port;
+                    }
+
+                    try {
+                        await api.addDevice({
+                            deviceName: r.model || r.hostname || r.ip,
+                            modelNumber: r.model || '',
+                            ipAddress: r.ip,
+                            port: port,
+                            baudRate: baudRate,
+                            comPort: '',
+                            macAddress: r.mac || '',
+                            connectionType: 'TCP',
+                            notes: 'Discovered via network scan',
+                            autoConnect: false
+                        });
+                        added++;
+                    } catch (err) { /* skip duplicates */ }
+                }
+                toast(added + ' device(s) added', 'success');
+                var overlay = addBtn.closest('.modal-overlay');
+                if (overlay) overlay.remove();
+                app.navigate('devices');
+            });
+        }
     }
 
     // Device modal with room membership section
@@ -1220,11 +1376,12 @@
         var cmdSel = $('#adv-command');
         if (!catSel) return;
 
-        // Determine series from selected device
+        // Determine series and device ID from selected device
         var series = '';
+        var devId = 0;
         var targetType = $('#target-type') ? $('#target-type').value : 'device';
         if (targetType === 'device') {
-            var devId = parseInt($('#target-id') ? $('#target-id').value : '');
+            devId = parseInt($('#target-id') ? $('#target-id').value : '');
             if (devId && cachedData.devices) {
                 var dev = cachedData.devices.find(function (d) { return d.id === devId; });
                 if (dev && dev.series) series = dev.series;
@@ -1232,7 +1389,13 @@
         }
 
         try {
-            var commands = await api.getCommands(series);
+            var commands;
+            if (devId && targetType === 'device') {
+                // Use merged endpoint: series commands + device-specific commands
+                commands = await api.getDeviceCommands(devId);
+            } else {
+                commands = await api.getCommands(series);
+            }
             advAllCommands = Array.isArray(commands) ? commands : [];
 
             var catSet = {};
@@ -2395,28 +2558,37 @@
                             '<select class="form-input" id="dbcmd-series-filter" style="width:auto;min-width:180px">' +
                                 '<option value="">All Series</option>' +
                             '</select>' +
+                            '<div class="flex gap-8">' +
+                                '<button class="btn btn-sm btn-secondary" id="dbcmd-export" title="Export CSV">Export CSV</button>' +
+                                '<button class="btn btn-sm btn-secondary" id="dbcmd-import-btn" title="Import CSV">Import CSV</button>' +
+                                '<input type="file" id="dbcmd-import-file" accept=".csv" style="display:none">' +
+                            '</div>' +
                         '</div>' +
                         '<div id="dbcmd-table" style="max-height:500px;overflow-y:auto"><div class="text-muted">Select a series or view all commands.</div></div>' +
                     '</div>' +
                     '<div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px">' +
                         '<div class="fw-600 mb-12">Command Details</div>' +
-                        '<p class="text-muted text-sm mb-12" style="padding:6px;background:var(--bg);border-radius:4px">Read-only in web portal. Use the desktop app to edit commands.</p>' +
                         '<div class="form-group"><label class="form-label text-sm">Series</label>' +
-                            '<input type="text" class="form-input" id="dbcmd-series" readonly></div>' +
+                            '<input type="text" class="form-input" id="dbcmd-series"></div>' +
                         '<div class="form-group"><label class="form-label text-sm">Category</label>' +
-                            '<input type="text" class="form-input" id="dbcmd-category" readonly></div>' +
+                            '<input type="text" class="form-input" id="dbcmd-category"></div>' +
                         '<div class="form-group"><label class="form-label text-sm">Name</label>' +
-                            '<input type="text" class="form-input" id="dbcmd-name" readonly></div>' +
+                            '<input type="text" class="form-input" id="dbcmd-name"></div>' +
                         '<div class="form-group"><label class="form-label text-sm">Code</label>' +
-                            '<input type="text" class="form-input" id="dbcmd-code" readonly style="font-family:monospace"></div>' +
+                            '<input type="text" class="form-input" id="dbcmd-code" style="font-family:monospace"></div>' +
                         '<div class="form-row">' +
                             '<div class="form-group"><label class="form-label text-sm">Port</label>' +
-                                '<input type="text" class="form-input" id="dbcmd-port" readonly></div>' +
+                                '<input type="number" class="form-input" id="dbcmd-port"></div>' +
                             '<div class="form-group"><label class="form-label text-sm">Format</label>' +
-                                '<input type="text" class="form-input" id="dbcmd-format" readonly></div>' +
+                                '<select class="form-input" id="dbcmd-format"><option value="HEX">HEX</option><option value="ASCII">ASCII</option></select></div>' +
                         '</div>' +
                         '<div class="form-group"><label class="form-label text-sm">Notes</label>' +
-                            '<textarea class="form-input" id="dbcmd-notes" rows="2" readonly></textarea></div>' +
+                            '<textarea class="form-input" id="dbcmd-notes" rows="2"></textarea></div>' +
+                        '<div class="flex gap-8 mt-12">' +
+                            '<button class="btn btn-sm btn-primary" id="dbcmd-save">Save</button>' +
+                            '<button class="btn btn-sm btn-secondary" id="dbcmd-new">New</button>' +
+                            '<button class="btn btn-sm btn-danger" id="dbcmd-delete">Delete</button>' +
+                        '</div>' +
                     '</div>' +
                 '</div>' +
             '</div>' +
@@ -2427,13 +2599,17 @@
                     '<div id="dbmodel-table"><div class="loading-center"><div class="spinner"></div></div></div>' +
                     '<div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px">' +
                         '<div class="fw-600 mb-12">Model Details</div>' +
-                        '<p class="text-muted text-sm mb-12" style="padding:6px;background:var(--bg);border-radius:4px">Read-only in web portal. Use the desktop app to edit models.</p>' +
                         '<div class="form-group"><label class="form-label text-sm">Model Number</label>' +
-                            '<input type="text" class="form-input" id="dbmodel-number" readonly></div>' +
+                            '<input type="text" class="form-input" id="dbmodel-number"></div>' +
                         '<div class="form-group"><label class="form-label text-sm">Series Pattern</label>' +
-                            '<input type="text" class="form-input" id="dbmodel-series" readonly></div>' +
+                            '<input type="text" class="form-input" id="dbmodel-series"></div>' +
                         '<div class="form-group"><label class="form-label text-sm">Baud Rate</label>' +
-                            '<input type="text" class="form-input" id="dbmodel-baud" readonly></div>' +
+                            '<input type="number" class="form-input" id="dbmodel-baud"></div>' +
+                        '<div class="flex gap-8 mt-12">' +
+                            '<button class="btn btn-sm btn-primary" id="dbmodel-save">Save</button>' +
+                            '<button class="btn btn-sm btn-secondary" id="dbmodel-new">New</button>' +
+                            '<button class="btn btn-sm btn-danger" id="dbmodel-delete">Delete</button>' +
+                        '</div>' +
                     '</div>' +
                 '</div>' +
             '</div>' +
@@ -2444,15 +2620,19 @@
                     '<div id="dboui-table"><div class="loading-center"><div class="spinner"></div></div></div>' +
                     '<div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px">' +
                         '<div class="fw-600 mb-12">OUI Details</div>' +
-                        '<p class="text-muted text-sm mb-12" style="padding:6px;background:var(--bg);border-radius:4px">Read-only in web portal. Use the desktop app to edit OUI entries.</p>' +
-                        '<div class="form-group"><label class="form-label text-sm">OUI Prefix</label>' +
-                            '<input type="text" class="form-input" id="dboui-prefix" readonly></div>' +
+                        '<div class="form-group"><label class="form-label text-sm">OUI Prefix (XX:XX:XX)</label>' +
+                            '<input type="text" class="form-input" id="dboui-prefix" style="font-family:monospace"></div>' +
                         '<div class="form-group"><label class="form-label text-sm">Series Label</label>' +
-                            '<input type="text" class="form-input" id="dboui-label" readonly></div>' +
+                            '<input type="text" class="form-input" id="dboui-label"></div>' +
                         '<div class="form-group"><label class="form-label text-sm">Series Pattern</label>' +
-                            '<input type="text" class="form-input" id="dboui-pattern" readonly></div>' +
+                            '<select class="form-input" id="dboui-pattern"></select></div>' +
                         '<div class="form-group"><label class="form-label text-sm">Notes</label>' +
-                            '<textarea class="form-input" id="dboui-notes" rows="2" readonly></textarea></div>' +
+                            '<textarea class="form-input" id="dboui-notes" rows="2"></textarea></div>' +
+                        '<div class="flex gap-8 mt-12">' +
+                            '<button class="btn btn-sm btn-primary" id="dboui-save">Save</button>' +
+                            '<button class="btn btn-sm btn-secondary" id="dboui-new">New</button>' +
+                            '<button class="btn btn-sm btn-danger" id="dboui-delete">Delete</button>' +
+                        '</div>' +
                     '</div>' +
                 '</div>' +
             '</div>' +
@@ -2499,7 +2679,216 @@
         // Load commands tab initially
         loadDbCommandsTab();
 
-        // Groups CRUD
+        // ── Commands CRUD ────────────────────────────────────────────────────
+        var selectedCmdId = null;
+
+        function clearCmdForm() {
+            selectedCmdId = null;
+            $('#dbcmd-series').value = '';
+            $('#dbcmd-category').value = '';
+            $('#dbcmd-name').value = '';
+            $('#dbcmd-code').value = '';
+            $('#dbcmd-port').value = '';
+            $('#dbcmd-format').value = 'HEX';
+            $('#dbcmd-notes').value = '';
+            $$('.db-cmd-row.selected').forEach(function (r) { r.classList.remove('selected'); r.style.background = ''; });
+        }
+
+        var dbCmdNew = $('#dbcmd-new');
+        if (dbCmdNew) dbCmdNew.addEventListener('click', clearCmdForm);
+
+        var dbCmdSave = $('#dbcmd-save');
+        if (dbCmdSave) dbCmdSave.addEventListener('click', async function () {
+            var series = $('#dbcmd-series').value.trim();
+            var name = $('#dbcmd-name').value.trim();
+            if (!series || !name) { toast('Series and Name are required', 'warning'); return; }
+            var data = {
+                seriesPattern: series,
+                commandCategory: $('#dbcmd-category').value.trim(),
+                commandName: name,
+                commandCode: $('#dbcmd-code').value.trim(),
+                notes: $('#dbcmd-notes').value.trim(),
+                port: parseInt($('#dbcmd-port').value) || 0,
+                commandFormat: $('#dbcmd-format').value || 'HEX'
+            };
+            try {
+                if (selectedCmdId) {
+                    await api.updateCommand(selectedCmdId, data);
+                    toast('Command updated', 'success');
+                } else {
+                    await api.addCommand(data);
+                    toast('Command created', 'success');
+                }
+                clearCmdForm();
+                loadDbCommandsTable($('#dbcmd-series-filter').value);
+            } catch (err) { toast(err.message, 'error'); }
+        });
+
+        var dbCmdDelete = $('#dbcmd-delete');
+        if (dbCmdDelete) dbCmdDelete.addEventListener('click', async function () {
+            if (!selectedCmdId) { toast('Select a command first', 'warning'); return; }
+            var ok = await confirmDialog('Delete Command', 'Are you sure you want to delete this command?');
+            if (!ok) return;
+            try {
+                await api.deleteCommand(selectedCmdId);
+                toast('Command deleted', 'success');
+                clearCmdForm();
+                loadDbCommandsTable($('#dbcmd-series-filter').value);
+            } catch (err) { toast(err.message, 'error'); }
+        });
+
+        // CSV Export
+        var dbCmdExport = $('#dbcmd-export');
+        if (dbCmdExport) dbCmdExport.addEventListener('click', async function () {
+            try {
+                await api.exportCommandsCsv();
+                toast('CSV exported', 'success');
+            } catch (err) { toast(err.message, 'error'); }
+        });
+
+        // CSV Import
+        var dbCmdImportBtn = $('#dbcmd-import-btn');
+        var dbCmdImportFile = $('#dbcmd-import-file');
+        if (dbCmdImportBtn && dbCmdImportFile) {
+            dbCmdImportBtn.addEventListener('click', function () { dbCmdImportFile.click(); });
+            dbCmdImportFile.addEventListener('change', async function () {
+                var file = dbCmdImportFile.files[0];
+                if (!file) return;
+                try {
+                    var result = await api.importCommandsCsv(file);
+                    toast('Import complete: ' + (result.imported || 0) + ' imported, ' + (result.skipped || 0) + ' skipped, ' + (result.errors || 0) + ' errors', 'success');
+                    loadDbCommandsTable($('#dbcmd-series-filter').value);
+                } catch (err) { toast(err.message, 'error'); }
+                dbCmdImportFile.value = '';
+            });
+        }
+
+        // Expose selectedCmdId setter for table click handler
+        body._setSelectedCmdId = function (id) { selectedCmdId = id; };
+
+        // ── Models CRUD ──────────────────────────────────────────────────────
+        var selectedModelId = null;
+
+        function clearModelForm() {
+            selectedModelId = null;
+            $('#dbmodel-number').value = '';
+            $('#dbmodel-series').value = '';
+            $('#dbmodel-baud').value = '';
+            $$('.db-model-row.selected').forEach(function (r) { r.classList.remove('selected'); r.style.background = ''; });
+        }
+
+        var dbModelNew = $('#dbmodel-new');
+        if (dbModelNew) dbModelNew.addEventListener('click', clearModelForm);
+
+        var dbModelSave = $('#dbmodel-save');
+        if (dbModelSave) dbModelSave.addEventListener('click', async function () {
+            var modelNum = $('#dbmodel-number').value.trim();
+            var seriesPat = $('#dbmodel-series').value.trim();
+            if (!modelNum || !seriesPat) { toast('Model Number and Series Pattern are required', 'warning'); return; }
+            var data = {
+                modelNumber: modelNum,
+                seriesPattern: seriesPat,
+                baudRate: parseInt($('#dbmodel-baud').value) || 9600
+            };
+            try {
+                if (selectedModelId) {
+                    await api.updateModel(selectedModelId, data);
+                    toast('Model updated', 'success');
+                } else {
+                    await api.addModel(data);
+                    toast('Model created', 'success');
+                }
+                clearModelForm();
+                loadDbModels();
+            } catch (err) { toast(err.message, 'error'); }
+        });
+
+        var dbModelDelete = $('#dbmodel-delete');
+        if (dbModelDelete) dbModelDelete.addEventListener('click', async function () {
+            if (!selectedModelId) { toast('Select a model first', 'warning'); return; }
+            var ok = await confirmDialog('Delete Model', 'Are you sure you want to delete this model?');
+            if (!ok) return;
+            try {
+                await api.deleteModel(selectedModelId);
+                toast('Model deleted', 'success');
+                clearModelForm();
+                loadDbModels();
+            } catch (err) { toast(err.message, 'error'); }
+        });
+
+        body._setSelectedModelId = function (id) { selectedModelId = id; };
+
+        // ── OUI CRUD ─────────────────────────────────────────────────────────
+        var selectedOuiId = null;
+
+        // Populate the series dropdown for OUI tab
+        (async function populateOuiSeriesDropdown() {
+            var patternSel = $('#dboui-pattern');
+            if (!patternSel) return;
+            try {
+                var seriesList = await api.getCommandSeries();
+                patternSel.innerHTML = '<option value="">-- Select Series --</option>';
+                if (Array.isArray(seriesList)) {
+                    seriesList.forEach(function (s) {
+                        var name = typeof s === 'string' ? s : (s.name || s.series || '');
+                        patternSel.innerHTML += '<option value="' + esc(name) + '">' + esc(name) + '</option>';
+                    });
+                }
+            } catch (err) { /* ok */ }
+        })();
+
+        function clearOuiForm() {
+            selectedOuiId = null;
+            $('#dboui-prefix').value = '';
+            $('#dboui-label').value = '';
+            var patternSel = $('#dboui-pattern');
+            if (patternSel) patternSel.value = '';
+            $('#dboui-notes').value = '';
+            $$('.db-oui-row.selected').forEach(function (r) { r.classList.remove('selected'); r.style.background = ''; });
+        }
+
+        var dbOuiNew = $('#dboui-new');
+        if (dbOuiNew) dbOuiNew.addEventListener('click', clearOuiForm);
+
+        var dbOuiSave = $('#dboui-save');
+        if (dbOuiSave) dbOuiSave.addEventListener('click', async function () {
+            var prefix = $('#dboui-prefix').value.trim();
+            if (!prefix) { toast('OUI Prefix is required', 'warning'); return; }
+            var data = {
+                ouiPrefix: prefix,
+                seriesLabel: $('#dboui-label').value.trim(),
+                seriesPattern: $('#dboui-pattern').value || '',
+                notes: $('#dboui-notes').value.trim()
+            };
+            try {
+                if (selectedOuiId) {
+                    await api.updateOui(selectedOuiId, data);
+                    toast('OUI entry updated', 'success');
+                } else {
+                    await api.addOui(data);
+                    toast('OUI entry created', 'success');
+                }
+                clearOuiForm();
+                loadDbOui();
+            } catch (err) { toast(err.message, 'error'); }
+        });
+
+        var dbOuiDelete = $('#dboui-delete');
+        if (dbOuiDelete) dbOuiDelete.addEventListener('click', async function () {
+            if (!selectedOuiId) { toast('Select an OUI entry first', 'warning'); return; }
+            var ok = await confirmDialog('Delete OUI Entry', 'Are you sure you want to delete this OUI entry?');
+            if (!ok) return;
+            try {
+                await api.deleteOui(selectedOuiId);
+                toast('OUI entry deleted', 'success');
+                clearOuiForm();
+                loadDbOui();
+            } catch (err) { toast(err.message, 'error'); }
+        });
+
+        body._setSelectedOuiId = function (id) { selectedOuiId = id; };
+
+        // ── Groups CRUD ──────────────────────────────────────────────────────
         var selectedGroupId = null;
 
         var dbGroupSave = $('#dbgroup-save');
@@ -2510,7 +2899,6 @@
             selectedGroupId = null;
             $('#dbgroup-name').value = '';
             $('#dbgroup-notes').value = '';
-            // Deselect rows
             $$('#dbgroup-table tr.selected').forEach(function (r) { r.classList.remove('selected'); });
         });
 
@@ -2648,6 +3036,10 @@
                         row.classList.add('selected');
                         row.style.background = 'var(--primary-alpha, rgba(74,234,220,0.1))';
 
+                        // Set selectedCmdId for CRUD operations
+                        var pageBody = $('#page-body');
+                        if (pageBody && pageBody._setSelectedCmdId) pageBody._setSelectedCmdId(cmdId);
+
                         $('#dbcmd-series').value = cmd.seriesPattern || cmd.series || '';
                         $('#dbcmd-category').value = cmd.commandCategory || cmd.category || '';
                         $('#dbcmd-name').value = cmd.commandName || cmd.name || '';
@@ -2684,7 +3076,8 @@
                         var modelNum = typeof m === 'string' ? m : (m.modelNumber || m.name || '');
                         var seriesVal = typeof m === 'object' ? (m.seriesPattern || m.series || '') : '';
                         var baud = typeof m === 'object' ? (m.baudRate || '') : '';
-                        return '<tr class="db-model-row" style="cursor:pointer" data-model="' + esc(modelNum) + '">' +
+                        var modelId = typeof m === 'object' ? (m.id || 0) : 0;
+                        return '<tr class="db-model-row" style="cursor:pointer" data-model="' + esc(modelNum) + '" data-model-id="' + modelId + '">' +
                             '<td style="padding:6px 8px" class="fw-600">' + esc(modelNum) + '</td>' +
                             '<td style="padding:6px 8px">' + esc(seriesVal) + '</td>' +
                             '<td style="padding:6px 8px">' + esc(String(baud)) + '</td>' +
@@ -2692,13 +3085,19 @@
                     }).join('') +
                     '</tbody></table></div>';
 
-            el.addEventListener('click', function (e) {
+            el.onclick = function (e) {
                 var row = e.target.closest('.db-model-row');
                 if (row) {
-                    var modelNum = row.dataset.model;
+                    var modelId = parseInt(row.dataset.modelId);
                     var model = models.find(function (m) {
-                        return (typeof m === 'string' ? m : (m.modelNumber || m.name || '')) === modelNum;
+                        return typeof m === 'object' && m.id === modelId;
                     });
+                    if (!model) {
+                        var modelNum = row.dataset.model;
+                        model = models.find(function (m) {
+                            return (typeof m === 'string' ? m : (m.modelNumber || m.name || '')) === modelNum;
+                        });
+                    }
                     if (model) {
                         $$('.db-model-row', el).forEach(function (r) {
                             r.classList.remove('selected');
@@ -2706,6 +3105,10 @@
                         });
                         row.classList.add('selected');
                         row.style.background = 'var(--primary-alpha, rgba(74,234,220,0.1))';
+
+                        // Set selectedModelId for CRUD operations
+                        var pageBody = $('#page-body');
+                        if (pageBody && pageBody._setSelectedModelId) pageBody._setSelectedModelId(modelId || null);
 
                         if (typeof model === 'string') {
                             $('#dbmodel-number').value = model;
@@ -2718,14 +3121,13 @@
                         }
                     }
                 }
-            });
+            };
         } catch (err) {
             el.innerHTML = '<p class="text-muted">' + esc(err.message) + '</p>';
         }
     }
 
     // -- Database: OUI Tab ----------------------------------------------------
-    // FIX #2: Fetches from /api/oui endpoint, displays table with details panel
 
     async function loadDbOui() {
         var el = $('#dboui-table');
@@ -2735,7 +3137,7 @@
         try {
             var ouiData = await api.getOuiTable();
             if (!Array.isArray(ouiData) || ouiData.length === 0) {
-                el.innerHTML = '<p class="text-muted">No OUI entries found.</p>';
+                el.innerHTML = '<p class="text-muted">No OUI entries. Create one using the form.</p>';
                 return;
             }
 
@@ -2743,7 +3145,7 @@
                 '<div class="table-wrap" style="max-height:450px;overflow-y:auto"><table style="font-size:13px">' +
                     '<thead><tr><th>OUI Prefix</th><th>Series Label</th><th>Series Pattern</th><th>Notes</th></tr></thead>' +
                     '<tbody>' + ouiData.map(function (o) {
-                        return '<tr class="db-oui-row" style="cursor:pointer" data-oui="' + esc(o.ouiPrefix || o.prefix || '') + '">' +
+                        return '<tr class="db-oui-row" style="cursor:pointer" data-oui-id="' + (o.id || 0) + '">' +
                             '<td style="padding:6px 8px" class="fw-600"><code>' + esc(o.ouiPrefix || o.prefix || '') + '</code></td>' +
                             '<td style="padding:6px 8px">' + esc(o.seriesLabel || o.label || '') + '</td>' +
                             '<td style="padding:6px 8px">' + esc(o.seriesPattern || o.pattern || '') + '</td>' +
@@ -2755,8 +3157,8 @@
             el.addEventListener('click', function (e) {
                 var row = e.target.closest('.db-oui-row');
                 if (row) {
-                    var prefix = row.dataset.oui;
-                    var oui = ouiData.find(function (o) { return (o.ouiPrefix || o.prefix || '') === prefix; });
+                    var id = parseInt(row.dataset.ouiId);
+                    var oui = ouiData.find(function (o) { return o.id === id; });
                     if (oui) {
                         $$('.db-oui-row', el).forEach(function (r) {
                             r.classList.remove('selected');
@@ -2765,9 +3167,25 @@
                         row.classList.add('selected');
                         row.style.background = 'var(--primary-alpha, rgba(74,234,220,0.1))';
 
+                        var body = $('#page-body');
+                        if (body && body._setSelectedOuiId) body._setSelectedOuiId(id);
+
                         $('#dboui-prefix').value = oui.ouiPrefix || oui.prefix || '';
                         $('#dboui-label').value = oui.seriesLabel || oui.label || '';
-                        $('#dboui-pattern').value = oui.seriesPattern || oui.pattern || '';
+                        // Set the dropdown value
+                        var patternSel = $('#dboui-pattern');
+                        if (patternSel) {
+                            var val = oui.seriesPattern || oui.pattern || '';
+                            // If value not in options, add it
+                            var found = false;
+                            for (var i = 0; i < patternSel.options.length; i++) {
+                                if (patternSel.options[i].value === val) { found = true; break; }
+                            }
+                            if (!found && val) {
+                                patternSel.innerHTML += '<option value="' + esc(val) + '">' + esc(val) + '</option>';
+                            }
+                            patternSel.value = val;
+                        }
                         $('#dboui-notes').value = oui.notes || '';
                     }
                 }
@@ -2987,7 +3405,10 @@
             '<div class="tab-content" id="stab-keys">' +
                 '<div class="flex items-center justify-between mb-16">' +
                     '<div class="card-title">API Key Management</div>' +
-                    '<button class="btn btn-primary btn-sm" id="add-key-btn">+ New Key</button>' +
+                    '<div style="display:flex;gap:8px">' +
+                        '<a href="/api/docs" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">API Documentation</a>' +
+                        '<button class="btn btn-primary btn-sm" id="add-key-btn">+ New Key</button>' +
+                    '</div>' +
                 '</div>' +
                 '<div id="keys-table"><div class="loading-center"><div class="spinner"></div></div></div>' +
             '</div>' +
@@ -2999,8 +3420,9 @@
                     '<div class="flex items-center justify-between mb-16">' +
                         '<span>Theme</span>' +
                         '<select class="form-input" id="theme-select" style="width:auto;min-width:180px">' +
-                            '<option value="avocor"' + (getCurrentTheme() === 'avocor' ? ' selected' : '') + '>Avocor Colors (Gradients)</option>' +
-                            '<option value="dark"' + (getCurrentTheme() === 'dark' ? ' selected' : '') + '>Dark Mode (Simple)</option>' +
+                            '<option value="light"' + (getCurrentTheme() === 'light' ? ' selected' : '') + '>Light</option>' +
+                            '<option value="medium"' + (getCurrentTheme() === 'medium' ? ' selected' : '') + '>Medium</option>' +
+                            '<option value="dark"' + (getCurrentTheme() === 'dark' ? ' selected' : '') + '>Dark</option>' +
                         '</select>' +
                     '</div>' +
                 '</div>' +

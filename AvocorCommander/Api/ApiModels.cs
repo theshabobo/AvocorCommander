@@ -21,6 +21,23 @@ public record DeviceDto(
     bool   IsConnected,
     string? Series);
 
+public record DeviceDetailDto(
+    int    Id,
+    string DeviceName,
+    string ModelNumber,
+    string IPAddress,
+    int    Port,
+    int    BaudRate,
+    string ComPort,
+    string MacAddress,
+    string ConnectionType,
+    string Notes,
+    string LastSeenAt,
+    bool   AutoConnect,
+    bool   IsConnected,
+    string? Series,
+    List<AvocorCommander.Models.CommandEntry> DeviceCommands);
+
 public record CommandRequest(string? Category, string Command);
 
 public record CommandResponse(bool Success, string Response, string Hex, string? Error = null);
@@ -85,6 +102,32 @@ public record CreateScheduleRequest(string RuleName, int? DeviceId, int? GroupId
 // ── Settings ────────────────────────────────────────────────────────────────
 public record SetConfigRequest(string Value);
 public record PromptResponse(bool Continue);
+
+// ── Audit Logs ──────────────────────────────────────────────────────────────
+public record AuditLogDto(string Timestamp, string DeviceName, string DeviceAddress, string CommandName, string CommandCode, string Response, bool Success, string Notes);
+
+public record AuditLogPagedResponse(int Total, List<AuditLogDto> Items);
+
+// ── Firmware ────────────────────────────────────────────────────────────────
+public record FirmwareResponse(int DeviceId, string? Firmware, string? Error = null);
+
+// ── Scan ────────────────────────────────────────────────────────────────────
+public record ScanRequest(string StartIp, string EndIp);
+
+public record ScanStartResponse(string ScanId);
+
+public record ScanProgressDto(int Done, int Total);
+
+public record ScanResultDto(string Ip, string Mac, string Series, string Model, string Hostname, bool Online);
+
+public record ScanStatusResponse(string Status, List<ScanResultDto> Results, ScanProgressDto Progress);
+
+// ── Command / Model CRUD ────────────────────────────────────────────────────
+public record CommandCrudRequest(string SeriesPattern, string? CommandCategory, string CommandName, string? CommandCode, string? Notes, int Port, string? CommandFormat);
+public record ModelCrudRequest(string ModelNumber, string SeriesPattern, int BaudRate);
+
+// ── OUI CRUD ────────────────────────────────────────────────────────────────
+public record OuiCrudRequest(string OuiPrefix, string SeriesLabel, string SeriesPattern, string Notes);
 
 // ── WebSocket events ─────────────────────────────────────────────────────────
 public record WsEvent(string Type, object Data);

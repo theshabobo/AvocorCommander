@@ -15,7 +15,7 @@ public sealed class ServerDbService : IDisposable
 
     public ServerDbService()
     {
-        _dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server.db");
+        _dbPath = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath) ?? AppDomain.CurrentDomain.BaseDirectory, "server.db");
         EnsureSchema();
         SeedDefaults();
     }

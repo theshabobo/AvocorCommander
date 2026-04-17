@@ -130,6 +130,14 @@ class CommanderApi {
         return this._fetch('POST', `/api/devices/${deviceId}/disconnect`);
     }
 
+    async getDeviceCommands(deviceId) {
+        return this._fetch('GET', `/api/devices/${deviceId}/commands`);
+    }
+
+    async discoverApps(deviceId) {
+        return this._fetch('POST', `/api/devices/${deviceId}/discover`);
+    }
+
     // -- Groups / Rooms -------------------------------------------------------
 
     async getGroups() { return this.get('/api/groups'); }
@@ -173,9 +181,71 @@ class CommanderApi {
     }
     async getModels() { return this.get('/api/models'); }
 
-    // -- OUI Table (read-only) ------------------------------------------------
+    // -- Commands CRUD --------------------------------------------------------
+
+    async addCommand(data) { return this.post('/api/commands', data); }
+    async updateCommand(id, data) { return this.put(`/api/commands/${id}`, data); }
+    async deleteCommand(id) { return this.del(`/api/commands/${id}`); }
+
+    // -- Models CRUD ----------------------------------------------------------
+
+    async addModel(data) { return this.post('/api/models', data); }
+    async updateModel(id, data) { return this.put(`/api/models/${id}`, data); }
+    async deleteModel(id) { return this.del(`/api/models/${id}`); }
+
+    // -- CSV Export/Import ----------------------------------------------------
+
+    async exportCommandsCsv() {
+        const res = await fetch('/api/commands/export', { headers: this._headers() });
+        if (!res.ok) throw new ApiError('Export failed', 'Failed to export commands.', res.status);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'commands_export.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    async importCommandsCsv(file) {
+        const fd = new FormData();
+        fd.append('file', file);
+        return this.postForm('/api/commands/import', fd);
+    }
+
+    // -- Audit Log ------------------------------------------------------------
+
+    async getLogs(params) {
+        var qs = [];
+        if (params) {
+            if (params.device) qs.push('device=' + encodeURIComponent(params.device));
+            if (params.from) qs.push('from=' + encodeURIComponent(params.from));
+            if (params.to) qs.push('to=' + encodeURIComponent(params.to));
+            if (params.success !== undefined && params.success !== null) qs.push('success=' + params.success);
+            if (params.search) qs.push('search=' + encodeURIComponent(params.search));
+            if (params.limit !== undefined) qs.push('limit=' + params.limit);
+            if (params.offset !== undefined) qs.push('offset=' + params.offset);
+        }
+        return this.get('/api/logs' + (qs.length ? '?' + qs.join('&') : ''));
+    }
+
+    async clearLogs() { return this.del('/api/logs'); }
+
+    // -- Firmware -------------------------------------------------------------
+
+    async getDeviceFirmware(id) { return this.get(`/api/devices/${id}/firmware`); }
+
+    // -- Network Scan ---------------------------------------------------------
+
+    async startScan(startIp, endIp) { return this.post('/api/scan', { startIp, endIp }); }
+    async getScanStatus(scanId) { return this.get(`/api/scan/${scanId}`); }
+
+    // -- OUI Table ------------------------------------------------------------
 
     async getOuiTable() { return this.get('/api/oui'); }
+    async addOui(data) { return this.post('/api/oui', data); }
+    async updateOui(id, data) { return this.put(`/api/oui/${id}`, data); }
+    async deleteOui(id) { return this.del(`/api/oui/${id}`); }
 
     // -- Status / Health ------------------------------------------------------
 

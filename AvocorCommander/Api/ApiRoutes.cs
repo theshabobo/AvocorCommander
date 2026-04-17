@@ -4,6 +4,7 @@ using AvocorCommander.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Text.Json;
 
@@ -17,6 +18,24 @@ public static class ApiRoutes
     static IResult? RequireAdmin(HttpContext ctx) =>
         ctx.Items["AuthRole"] as string == "Admin" ? null
         : Results.Json(new { success = false, error = "Admin role required." }, statusCode: 403);
+
+    static IResult? RequireOperatorOrAdmin(HttpContext ctx)
+    {
+        var role = ctx.Items["AuthRole"] as string;
+        return role == "Admin" || role == "Operator"
+            ? null
+            : Results.Json(new { success = false, error = "Operator or Admin role required." }, statusCode: 403);
+    }
+
+    // In-memory scan state for async network scans
+    private static readonly ConcurrentDictionary<string, ScanState> _scans = new();
+
+    private sealed class ScanState
+    {
+        public string Status { get; set; } = "running";
+        public List<ScanResultDto> Results { get; } = new();
+        public (int done, int total) Progress { get; set; }
+    }
 
     public static void MapApiRoutes(
         this WebApplication app,
@@ -68,17 +87,22 @@ public static class ApiRoutes
             if (device == null)
                 return Results.NotFound(new ErrorResponse("Not found", $"Device {id} not found."));
 
-            var dto = new DeviceDto(
+            var deviceCommands = db.GetDeviceCommands(id);
+            var dto = new DeviceDetailDto(
                 device.Id, device.DeviceName, device.ModelNumber, device.IPAddress,
                 device.Port, device.BaudRate, device.ComPort, device.MacAddress,
                 device.ConnectionType, device.Notes, device.LastSeenAt, device.AutoConnect,
                 connMgr.IsConnected(device.Id),
-                db.GetSeriesForModel(device.ModelNumber));
+                db.GetSeriesForModel(device.ModelNumber),
+                deviceCommands);
             return Results.Ok(dto);
         });
 
-        app.MapPost("/api/devices/{id}/wake", async (int id) =>
+        app.MapPost("/api/devices/{id}/wake", async (HttpContext ctx, int id) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var device = db.GetAllDevices().FirstOrDefault(d => d.Id == id);
             if (device == null)
                 return Results.NotFound(new ErrorResponse("Not found", $"Device {id} not found."));
@@ -87,8 +111,11 @@ public static class ApiRoutes
             return Results.Ok(new WakeResponse(result.MagicPacketSent, result.PowerOnSent, result.PowerOnAckd, result.Detail));
         });
 
-        app.MapPost("/api/devices/{id}/connect", async (int id) =>
+        app.MapPost("/api/devices/{id}/connect", async (HttpContext ctx, int id) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var device = db.GetAllDevices().FirstOrDefault(d => d.Id == id);
             if (device == null)
                 return Results.NotFound(new ErrorResponse("Not found", $"Device {id} not found."));
@@ -103,8 +130,11 @@ public static class ApiRoutes
             return Results.Ok(new SuccessResponse(true, $"Connected to {device.DeviceName}."));
         });
 
-        app.MapPost("/api/devices/{id}/disconnect", async (int id) =>
+        app.MapPost("/api/devices/{id}/disconnect", async (HttpContext ctx, int id) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var device = db.GetAllDevices().FirstOrDefault(d => d.Id == id);
             if (device == null)
                 return Results.NotFound(new ErrorResponse("Not found", $"Device {id} not found."));
@@ -116,8 +146,11 @@ public static class ApiRoutes
             return Results.Ok(new SuccessResponse(true, $"Disconnected from {device.DeviceName}."));
         });
 
-        app.MapPost("/api/devices/{id}/command", async (int id, CommandRequest req) =>
+        app.MapPost("/api/devices/{id}/command", async (HttpContext ctx, int id, CommandRequest req) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             if (string.IsNullOrWhiteSpace(req.Command))
                 return Results.BadRequest(new ErrorResponse("Bad request", "Command is required."));
 
@@ -129,12 +162,21 @@ public static class ApiRoutes
             if (string.IsNullOrEmpty(series))
                 return Results.Json(new ErrorResponse("No series", $"Cannot resolve series for model '{device.ModelNumber}'."), statusCode: 422);
 
+            // Search series commands first, then fall back to device-specific commands
             CommandEntry? cmd;
             if (!string.IsNullOrWhiteSpace(req.Category))
             {
                 var commands = db.GetCommandsBySeriesAndCategory(series, req.Category);
                 cmd = commands.FirstOrDefault(c =>
                     string.Equals(c.CommandName, req.Command, StringComparison.OrdinalIgnoreCase));
+                // Fall back to device-specific commands
+                if (cmd == null)
+                {
+                    var devCmds = db.GetDeviceCommands(id);
+                    cmd = devCmds.FirstOrDefault(c =>
+                        string.Equals(c.CommandCategory, req.Category, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(c.CommandName, req.Command, StringComparison.OrdinalIgnoreCase));
+                }
                 if (cmd == null)
                     return Results.NotFound(new ErrorResponse("Command not found",
                         $"No command '{req.Command}' in category '{req.Category}' for series '{series}'."));
@@ -144,6 +186,13 @@ public static class ApiRoutes
                 var commands = db.GetCommandsBySeries(series);
                 cmd = commands.FirstOrDefault(c =>
                     string.Equals(c.CommandName, req.Command, StringComparison.OrdinalIgnoreCase));
+                // Fall back to device-specific commands
+                if (cmd == null)
+                {
+                    var devCmds = db.GetDeviceCommands(id);
+                    cmd = devCmds.FirstOrDefault(c =>
+                        string.Equals(c.CommandName, req.Command, StringComparison.OrdinalIgnoreCase));
+                }
                 if (cmd == null)
                     return Results.NotFound(new ErrorResponse("Command not found",
                         $"No command '{req.Command}' for series '{series}'."));
@@ -194,8 +243,11 @@ public static class ApiRoutes
             }
         });
 
-        app.MapPost("/api/devices", (AddDeviceRequest req) =>
+        app.MapPost("/api/devices", (HttpContext ctx, AddDeviceRequest req) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var d = new DeviceEntry
             {
                 DeviceName     = req.DeviceName,
@@ -217,8 +269,11 @@ public static class ApiRoutes
                 d.AutoConnect, false, db.GetSeriesForModel(d.ModelNumber)));
         });
 
-        app.MapPut("/api/devices/{id}", (int id, UpdateDeviceRequest req) =>
+        app.MapPut("/api/devices/{id}", (HttpContext ctx, int id, UpdateDeviceRequest req) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var existing = db.GetAllDevices().FirstOrDefault(d => d.Id == id);
             if (existing == null)
                 return Results.NotFound(new ErrorResponse("Not found", $"Device {id} not found."));
@@ -242,14 +297,77 @@ public static class ApiRoutes
                 connMgr.IsConnected(existing.Id), db.GetSeriesForModel(existing.ModelNumber)));
         });
 
-        app.MapDelete("/api/devices/{id}", (int id) =>
+        app.MapDelete("/api/devices/{id}", (HttpContext ctx, int id) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var existing = db.GetAllDevices().FirstOrDefault(d => d.Id == id);
             if (existing == null)
                 return Results.NotFound(new ErrorResponse("Not found", $"Device {id} not found."));
 
             db.DeleteDevice(id);
             return Results.Ok(new SuccessResponse(true, "Device deleted."));
+        });
+
+        // ══════════════════════════════════════════════════════════════════════
+        //  DEVICE COMMANDS (series + device-specific merged)
+        // ══════════════════════════════════════════════════════════════════════
+
+        app.MapGet("/api/devices/{id}/commands", (int id) =>
+        {
+            var device = db.GetAllDevices().FirstOrDefault(d => d.Id == id);
+            if (device == null)
+                return Results.NotFound(new ErrorResponse("Not found", $"Device {id} not found."));
+
+            string? series = db.GetSeriesForModel(device.ModelNumber);
+            var seriesCommands = !string.IsNullOrEmpty(series)
+                ? db.GetCommandsBySeries(series)
+                : new List<Models.CommandEntry>();
+
+            var deviceCommands = db.GetDeviceCommands(id);
+
+            // If device has discovered Application commands, hide seed XYZ placeholders
+            bool hasRealApps = deviceCommands.Any(c =>
+                string.Equals(c.CommandCategory, "Application", StringComparison.OrdinalIgnoreCase));
+
+            if (hasRealApps)
+            {
+                seriesCommands = seriesCommands.Where(c =>
+                    !string.Equals(c.CommandCategory, "Application", StringComparison.OrdinalIgnoreCase) ||
+                    !c.CommandName.Contains("XYZ", StringComparison.OrdinalIgnoreCase)
+                ).ToList();
+            }
+
+            var merged = seriesCommands.Concat(deviceCommands).ToList();
+            return Results.Ok(merged);
+        });
+
+        app.MapPost("/api/devices/{id}/discover", async (HttpContext ctx, int id) =>
+        {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
+            var device = db.GetAllDevices().FirstOrDefault(d => d.Id == id);
+            if (device == null)
+                return Results.NotFound(new ErrorResponse("Not found", $"Device {id} not found."));
+
+            string? series = db.GetSeriesForModel(device.ModelNumber);
+            if (series != "B-Series")
+                return Results.Json(new ErrorResponse("Not supported", "App discovery is only supported on B-Series displays."), statusCode: 422);
+
+            if (!connMgr.IsConnected(device.Id))
+                return Results.Json(new ErrorResponse("Not connected", "Device must be connected to discover apps."), statusCode: 422);
+
+            // Clear existing device commands so we get a fresh discovery
+            db.ClearDeviceCommands(id);
+
+            var discovered = await AppDiscoveryService.DiscoverAppsAsync(connMgr, db, id);
+            if (discovered.Count > 0)
+                db.SetDeviceCommands(id, discovered);
+
+            var deviceCommands = db.GetDeviceCommands(id);
+            return Results.Ok(new { success = true, count = deviceCommands.Count, commands = deviceCommands });
         });
 
         // ══════════════════════════════════════════════════════════════════════
@@ -265,16 +383,22 @@ public static class ApiRoutes
             return Results.Ok(dtos);
         });
 
-        app.MapPost("/api/groups", (CreateGroupRequest req) =>
+        app.MapPost("/api/groups", (HttpContext ctx, CreateGroupRequest req) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var g = new GroupEntry { GroupName = req.GroupName, Notes = req.Notes };
             int id = db.InsertGroup(g);
             g.Id = id;
             return Results.Ok(new GroupDto(g.Id, g.GroupName, g.Notes, g.MemberDeviceIds.ToList()));
         });
 
-        app.MapPut("/api/groups/{id}", (int id, UpdateGroupRequest req) =>
+        app.MapPut("/api/groups/{id}", (HttpContext ctx, int id, UpdateGroupRequest req) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var existing = db.GetAllGroups().FirstOrDefault(g => g.Id == id);
             if (existing == null)
                 return Results.NotFound(new ErrorResponse("Not found", $"Group {id} not found."));
@@ -285,8 +409,11 @@ public static class ApiRoutes
             return Results.Ok(new GroupDto(existing.Id, existing.GroupName, existing.Notes, existing.MemberDeviceIds.ToList()));
         });
 
-        app.MapDelete("/api/groups/{id}", (int id) =>
+        app.MapDelete("/api/groups/{id}", (HttpContext ctx, int id) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var existing = db.GetAllGroups().FirstOrDefault(g => g.Id == id);
             if (existing == null)
                 return Results.NotFound(new ErrorResponse("Not found", $"Group {id} not found."));
@@ -295,8 +422,11 @@ public static class ApiRoutes
             return Results.Ok(new SuccessResponse(true, "Group deleted."));
         });
 
-        app.MapPut("/api/groups/{id}/members", (int id, SetGroupMembersRequest req) =>
+        app.MapPut("/api/groups/{id}/members", (HttpContext ctx, int id, SetGroupMembersRequest req) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var existing = db.GetAllGroups().FirstOrDefault(g => g.Id == id);
             if (existing == null)
                 return Results.NotFound(new ErrorResponse("Not found", $"Group {id} not found."));
@@ -305,8 +435,11 @@ public static class ApiRoutes
             return Results.Ok(new SuccessResponse(true, $"Group members updated ({req.DeviceIds.Count} devices)."));
         });
 
-        app.MapPost("/api/groups/{id}/command", async (int id, GroupCommandRequest req) =>
+        app.MapPost("/api/groups/{id}/command", async (HttpContext ctx, int id, GroupCommandRequest req) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             if (string.IsNullOrWhiteSpace(req.Command))
                 return Results.BadRequest(new ErrorResponse("Bad request", "Command name is required."));
 
@@ -417,8 +550,11 @@ public static class ApiRoutes
             return Results.Ok(dtos);
         });
 
-        app.MapPost("/api/macros/{id}/run", async (int id, MacroRunRequest req) =>
+        app.MapPost("/api/macros/{id}/run", async (HttpContext ctx, int id, MacroRunRequest req) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var macro = db.GetAllMacros().FirstOrDefault(m => m.Id == id);
             if (macro == null)
                 return Results.NotFound(new ErrorResponse("Not found", $"Macro {id} not found."));
@@ -452,8 +588,11 @@ public static class ApiRoutes
             }
         });
 
-        app.MapPost("/api/macros", (CreateMacroRequest req) =>
+        app.MapPost("/api/macros", (HttpContext ctx, CreateMacroRequest req) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var m = new MacroEntry { MacroName = req.MacroName, Notes = req.Notes };
             int id = db.InsertMacro(m);
             m.Id = id;
@@ -475,8 +614,11 @@ public static class ApiRoutes
             return Results.Ok(new MacroDto(m.Id, m.MacroName, m.Notes, req.Steps?.Count ?? 0));
         });
 
-        app.MapPut("/api/macros/{id}", (int id, CreateMacroRequest req) =>
+        app.MapPut("/api/macros/{id}", (HttpContext ctx, int id, CreateMacroRequest req) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var existing = db.GetAllMacros().FirstOrDefault(m => m.Id == id);
             if (existing == null)
                 return Results.NotFound(new ErrorResponse("Not found", $"Macro {id} not found."));
@@ -502,8 +644,11 @@ public static class ApiRoutes
             return Results.Ok(new MacroDto(existing.Id, existing.MacroName, existing.Notes, req.Steps?.Count ?? existing.Steps.Count));
         });
 
-        app.MapDelete("/api/macros/{id}", (int id) =>
+        app.MapDelete("/api/macros/{id}", (HttpContext ctx, int id) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var existing = db.GetAllMacros().FirstOrDefault(m => m.Id == id);
             if (existing == null)
                 return Results.NotFound(new ErrorResponse("Not found", $"Macro {id} not found."));
@@ -513,8 +658,11 @@ public static class ApiRoutes
         });
 
         // Prompt response — web client clicks Continue or Cancel on a macro prompt
-        app.MapPost("/api/macros/prompt/{promptId}", (string promptId, PromptResponse req) =>
+        app.MapPost("/api/macros/prompt/{promptId}", (HttpContext ctx, string promptId, PromptResponse req) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             bool resolved = wsHub.ResolvePrompt(promptId, req.Continue);
             return resolved
                 ? Results.Ok(new SuccessResponse(true, req.Continue ? "Continuing macro." : "Macro aborted."))
@@ -531,8 +679,11 @@ public static class ApiRoutes
             return Results.Ok(rules);
         });
 
-        app.MapPost("/api/schedules", (CreateScheduleRequest req) =>
+        app.MapPost("/api/schedules", (HttpContext ctx, CreateScheduleRequest req) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var r = new ScheduleRule
             {
                 RuleName     = req.RuleName,
@@ -549,8 +700,11 @@ public static class ApiRoutes
             return Results.Ok(r);
         });
 
-        app.MapPut("/api/schedules/{id}", (int id, CreateScheduleRequest req) =>
+        app.MapPut("/api/schedules/{id}", (HttpContext ctx, int id, CreateScheduleRequest req) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var existing = db.GetAllScheduleRules().FirstOrDefault(r => r.Id == id);
             if (existing == null)
                 return Results.NotFound(new ErrorResponse("Not found", $"Schedule rule {id} not found."));
@@ -567,8 +721,11 @@ public static class ApiRoutes
             return Results.Ok(existing);
         });
 
-        app.MapDelete("/api/schedules/{id}", (int id) =>
+        app.MapDelete("/api/schedules/{id}", (HttpContext ctx, int id) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var existing = db.GetAllScheduleRules().FirstOrDefault(r => r.Id == id);
             if (existing == null)
                 return Results.NotFound(new ErrorResponse("Not found", $"Schedule rule {id} not found."));
@@ -577,8 +734,11 @@ public static class ApiRoutes
             return Results.Ok(new SuccessResponse(true, "Schedule rule deleted."));
         });
 
-        app.MapPost("/api/schedules/{id}/run", async (int id) =>
+        app.MapPost("/api/schedules/{id}/run", async (HttpContext ctx, int id) =>
         {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
             var rule = db.GetAllScheduleRules().FirstOrDefault(r => r.Id == id);
             if (rule == null)
                 return Results.NotFound(new ErrorResponse("Not found", $"Schedule rule {id} not found."));
@@ -687,10 +847,258 @@ public static class ApiRoutes
             return Results.Ok(models);
         });
 
+        // ── Commands CRUD ───────────────────────────────────────────────────
+
+        app.MapPost("/api/commands", (HttpContext ctx, CommandCrudRequest req) =>
+        {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
+            if (string.IsNullOrWhiteSpace(req.SeriesPattern) || string.IsNullOrWhiteSpace(req.CommandName))
+                return Results.BadRequest(new ErrorResponse("Bad request", "SeriesPattern and CommandName are required."));
+
+            var entry = new CommandEntry
+            {
+                SeriesPattern   = req.SeriesPattern,
+                CommandCategory = req.CommandCategory ?? "",
+                CommandName     = req.CommandName,
+                CommandCode     = req.CommandCode ?? "",
+                Notes           = req.Notes ?? "",
+                Port            = req.Port,
+                CommandFormat   = req.CommandFormat ?? "HEX"
+            };
+            db.InsertCommand(entry);
+            return Results.Ok(new SuccessResponse(true, "Command created."));
+        });
+
+        app.MapPut("/api/commands/{id}", (HttpContext ctx, int id, CommandCrudRequest req) =>
+        {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
+            if (string.IsNullOrWhiteSpace(req.SeriesPattern) || string.IsNullOrWhiteSpace(req.CommandName))
+                return Results.BadRequest(new ErrorResponse("Bad request", "SeriesPattern and CommandName are required."));
+
+            var entry = new CommandEntry
+            {
+                Id              = id,
+                SeriesPattern   = req.SeriesPattern,
+                CommandCategory = req.CommandCategory ?? "",
+                CommandName     = req.CommandName,
+                CommandCode     = req.CommandCode ?? "",
+                Notes           = req.Notes ?? "",
+                Port            = req.Port,
+                CommandFormat   = req.CommandFormat ?? "HEX"
+            };
+            db.UpdateCommand(entry);
+            return Results.Ok(new SuccessResponse(true, "Command updated."));
+        });
+
+        app.MapDelete("/api/commands/{id}", (HttpContext ctx, int id) =>
+        {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+            db.DeleteCommand(id);
+            return Results.Ok(new SuccessResponse(true, "Command deleted."));
+        });
+
+        // ── Models CRUD ─────────────────────────────────────────────────────
+
+        app.MapPost("/api/models", (HttpContext ctx, ModelCrudRequest req) =>
+        {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
+            if (string.IsNullOrWhiteSpace(req.ModelNumber) || string.IsNullOrWhiteSpace(req.SeriesPattern))
+                return Results.BadRequest(new ErrorResponse("Bad request", "ModelNumber and SeriesPattern are required."));
+
+            var entry = new ModelEntry
+            {
+                ModelNumber   = req.ModelNumber,
+                SeriesPattern = req.SeriesPattern,
+                BaudRate      = req.BaudRate > 0 ? req.BaudRate : 9600
+            };
+            db.InsertModel(entry);
+            return Results.Ok(new SuccessResponse(true, "Model created."));
+        });
+
+        app.MapPut("/api/models/{id}", (HttpContext ctx, int id, ModelCrudRequest req) =>
+        {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
+            if (string.IsNullOrWhiteSpace(req.ModelNumber) || string.IsNullOrWhiteSpace(req.SeriesPattern))
+                return Results.BadRequest(new ErrorResponse("Bad request", "ModelNumber and SeriesPattern are required."));
+
+            var entry = new ModelEntry
+            {
+                Id            = id,
+                ModelNumber   = req.ModelNumber,
+                SeriesPattern = req.SeriesPattern,
+                BaudRate      = req.BaudRate > 0 ? req.BaudRate : 9600
+            };
+            db.UpdateModel(entry);
+            return Results.Ok(new SuccessResponse(true, "Model updated."));
+        });
+
+        app.MapDelete("/api/models/{id}", (HttpContext ctx, int id) =>
+        {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+            db.DeleteModel(id);
+            return Results.Ok(new SuccessResponse(true, "Model deleted."));
+        });
+
+        // ── CSV Export/Import ───────────────────────────────────────────────
+
+        app.MapGet("/api/commands/export", (HttpContext ctx) =>
+        {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
+            var commands = db.GetAllCommands();
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("SeriesPattern,CommandCategory,CommandName,CommandCode,Notes,Port,CommandFormat");
+            foreach (var c in commands)
+            {
+                sb.Append(CsvEscape(c.SeriesPattern)).Append(',');
+                sb.Append(CsvEscape(c.CommandCategory)).Append(',');
+                sb.Append(CsvEscape(c.CommandName)).Append(',');
+                sb.Append(CsvEscape(c.CommandCode)).Append(',');
+                sb.Append(CsvEscape(c.Notes)).Append(',');
+                sb.Append(c.Port).Append(',');
+                sb.AppendLine(CsvEscape(c.CommandFormat));
+            }
+
+            var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+            return Results.File(bytes, "text/csv", "commands_export.csv");
+        });
+
+        app.MapPost("/api/commands/import", async (HttpContext ctx) =>
+        {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
+            if (!ctx.Request.HasFormContentType)
+                return Results.BadRequest(new ErrorResponse("Bad request", "Expected multipart/form-data."));
+
+            var form = await ctx.Request.ReadFormAsync();
+            var file = form.Files.GetFile("file");
+            if (file == null || file.Length == 0)
+                return Results.BadRequest(new ErrorResponse("Bad request", "No CSV file provided."));
+
+            var existing = db.GetAllCommands();
+            var existingKeys = new HashSet<string>(
+                existing.Select(c => $"{c.SeriesPattern}||{c.CommandCategory}||{c.CommandName}"),
+                StringComparer.OrdinalIgnoreCase);
+
+            int imported = 0, skipped = 0, errors = 0;
+
+            using var reader = new StreamReader(file.OpenReadStream());
+            string? line;
+            bool headerSkipped = false;
+            while ((line = await reader.ReadLineAsync()) != null)
+            {
+                if (!headerSkipped) { headerSkipped = true; continue; }
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                try
+                {
+                    var fields = ParseCsvLine(line);
+                    if (fields.Count < 7) { errors++; continue; }
+
+                    var seriesPattern   = fields[0].Trim();
+                    var commandCategory = fields[1].Trim();
+                    var commandName     = fields[2].Trim();
+                    var commandCode     = fields[3].Trim();
+                    var notes           = fields[4].Trim();
+                    var portStr         = fields[5].Trim();
+                    var commandFormat   = fields[6].Trim();
+
+                    if (string.IsNullOrEmpty(seriesPattern) || string.IsNullOrEmpty(commandName))
+                    { errors++; continue; }
+
+                    var key = $"{seriesPattern}||{commandCategory}||{commandName}";
+                    if (existingKeys.Contains(key))
+                    { skipped++; continue; }
+
+                    int port = 0;
+                    int.TryParse(portStr, out port);
+
+                    db.InsertCommand(new CommandEntry
+                    {
+                        SeriesPattern   = seriesPattern,
+                        CommandCategory = commandCategory,
+                        CommandName     = commandName,
+                        CommandCode     = commandCode,
+                        Notes           = notes,
+                        Port            = port,
+                        CommandFormat   = string.IsNullOrEmpty(commandFormat) ? "HEX" : commandFormat
+                    });
+                    existingKeys.Add(key);
+                    imported++;
+                }
+                catch
+                {
+                    errors++;
+                }
+            }
+
+            return Results.Ok(new { imported, skipped, errors });
+        });
+
         app.MapGet("/api/oui", () =>
         {
             var entries = db.GetAllOuiEntries();
             return Results.Ok(entries);
+        });
+
+        app.MapPost("/api/oui", (HttpContext ctx, OuiCrudRequest req) =>
+        {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
+            if (string.IsNullOrWhiteSpace(req.OuiPrefix))
+                return Results.BadRequest(new ErrorResponse("Bad request", "OuiPrefix is required."));
+
+            var entry = new Models.OuiEntry
+            {
+                OUIPrefix     = req.OuiPrefix.Trim(),
+                SeriesLabel   = req.SeriesLabel?.Trim() ?? string.Empty,
+                SeriesPattern = req.SeriesPattern?.Trim() ?? string.Empty,
+                Notes         = req.Notes?.Trim() ?? string.Empty,
+            };
+            db.InsertOuiEntry(entry);
+            return Results.Ok(new SuccessResponse(true, $"OUI entry '{entry.OUIPrefix}' created."));
+        });
+
+        app.MapPut("/api/oui/{id}", (HttpContext ctx, int id, OuiCrudRequest req) =>
+        {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
+            if (string.IsNullOrWhiteSpace(req.OuiPrefix))
+                return Results.BadRequest(new ErrorResponse("Bad request", "OuiPrefix is required."));
+
+            var entry = new Models.OuiEntry
+            {
+                Id            = id,
+                OUIPrefix     = req.OuiPrefix.Trim(),
+                SeriesLabel   = req.SeriesLabel?.Trim() ?? string.Empty,
+                SeriesPattern = req.SeriesPattern?.Trim() ?? string.Empty,
+                Notes         = req.Notes?.Trim() ?? string.Empty,
+            };
+            db.UpdateOuiEntry(entry);
+            return Results.Ok(new SuccessResponse(true, $"OUI entry '{entry.OUIPrefix}' updated."));
+        });
+
+        app.MapDelete("/api/oui/{id}", (HttpContext ctx, int id) =>
+        {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
+            db.DeleteOuiEntry(id);
+            return Results.Ok(new SuccessResponse(true, "OUI entry deleted."));
         });
 
         // ══════════════════════════════════════════════════════════════════════
@@ -703,14 +1111,20 @@ public static class ApiRoutes
             return Results.Ok(new { key, value });
         });
 
-        app.MapPut("/api/settings/{key}", (string key, SetConfigRequest req) =>
+        app.MapPut("/api/settings/{key}", (HttpContext ctx, string key, SetConfigRequest req) =>
         {
+            var denied = RequireAdmin(ctx);
+            if (denied != null) return denied;
+
             serverDb.SetConfig(key, req.Value);
             return Results.Ok(new SuccessResponse(true, $"Config '{key}' updated."));
         });
 
-        app.MapPost("/api/settings/logo", async (HttpRequest httpReq) =>
+        app.MapPost("/api/settings/logo", async (HttpContext ctx, HttpRequest httpReq) =>
         {
+            var denied = RequireAdmin(ctx);
+            if (denied != null) return denied;
+
             if (!httpReq.HasFormContentType)
                 return Results.BadRequest(new ErrorResponse("Bad request", "Expected multipart/form-data."));
 
@@ -719,7 +1133,7 @@ public static class ApiRoutes
             if (file == null || file.Length == 0)
                 return Results.BadRequest(new ErrorResponse("Bad request", "No file uploaded."));
 
-            var imgDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wwwroot", "img");
+            var imgDir = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath) ?? AppDomain.CurrentDomain.BaseDirectory, "wwwroot", "img");
             Directory.CreateDirectory(imgDir);
             var filePath = Path.Combine(imgDir, "logo.png");
 
@@ -889,5 +1303,209 @@ public static class ApiRoutes
                 return Results.NotFound(new ErrorResponse("Not found", "API key not found."));
             return Results.Ok(new SuccessResponse(true, "API key deleted."));
         });
+
+        // ══════════════════════════════════════════════════════════════════════
+        //  AUDIT LOG
+        // ══════════════════════════════════════════════════════════════════════
+
+        app.MapGet("/api/logs", (string? device, string? from, string? to, bool? success, string? search, int? limit, int? offset) =>
+        {
+            var allLogs = db.GetCommandLog(50000);
+
+            IEnumerable<AuditLogEntry> filtered = allLogs;
+
+            if (!string.IsNullOrWhiteSpace(device))
+                filtered = filtered.Where(e => e.DeviceName.Contains(device, StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrWhiteSpace(from) && DateTime.TryParse(from, out var fromDt))
+                filtered = filtered.Where(e => DateTime.TryParse(e.Timestamp, out var ts) && ts >= fromDt);
+
+            if (!string.IsNullOrWhiteSpace(to) && DateTime.TryParse(to, out var toDt))
+                filtered = filtered.Where(e => DateTime.TryParse(e.Timestamp, out var ts) && ts < toDt.AddDays(1));
+
+            if (success.HasValue)
+                filtered = filtered.Where(e => e.Success == success.Value);
+
+            if (!string.IsNullOrWhiteSpace(search))
+                filtered = filtered.Where(e =>
+                    e.CommandName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    e.Response.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    e.Notes.Contains(search, StringComparison.OrdinalIgnoreCase));
+
+            var materialized = filtered.ToList();
+            int total = materialized.Count;
+
+            int skip = offset ?? 0;
+            int take = limit ?? 100;
+            var page = materialized.Skip(skip).Take(take);
+
+            var items = page.Select(e => new AuditLogDto(
+                e.Timestamp, e.DeviceName, e.DeviceAddress,
+                e.CommandName, e.CommandCode, e.Response,
+                e.Success, e.Notes)).ToList();
+
+            return Results.Ok(new AuditLogPagedResponse(total, items));
+        });
+
+        app.MapDelete("/api/logs", (HttpContext ctx) =>
+        {
+            var denied = RequireAdmin(ctx);
+            if (denied != null) return denied;
+
+            db.ClearCommandLog();
+            return Results.Ok(new SuccessResponse(true, "Audit log cleared."));
+        });
+
+        // ══════════════════════════════════════════════════════════════════════
+        //  FIRMWARE
+        // ══════════════════════════════════════════════════════════════════════
+
+        app.MapGet("/api/devices/{id}/firmware", async (int id) =>
+        {
+            var device = db.GetAllDevices().FirstOrDefault(d => d.Id == id);
+            if (device == null)
+                return Results.NotFound(new ErrorResponse("Not found", $"Device {id} not found."));
+
+            if (!connMgr.IsConnected(id))
+                return Results.Ok(new FirmwareResponse(id, null, "Not connected"));
+
+            string? fw = await FirmwareService.QueryFirmwareVersionAsync(connMgr, db, id);
+            return Results.Ok(new FirmwareResponse(id, fw, fw == null ? "No version command available for this series" : null));
+        });
+
+        // ══════════════════════════════════════════════════════════════════════
+        //  NETWORK SCAN
+        // ══════════════════════════════════════════════════════════════════════
+
+        app.MapPost("/api/scan", (HttpContext ctx, ScanRequest req) =>
+        {
+            var denied = RequireOperatorOrAdmin(ctx);
+            if (denied != null) return denied;
+
+            if (string.IsNullOrWhiteSpace(req.StartIp) || string.IsNullOrWhiteSpace(req.EndIp))
+                return Results.BadRequest(new ErrorResponse("Bad request", "startIp and endIp are required."));
+
+            string scanId = Guid.NewGuid().ToString("N")[..12];
+            var state = new ScanState();
+            _scans[scanId] = state;
+
+            var ouiMap = db.GetOuiSeriesMap();
+            var models = db.GetAllModels();
+            var modelSeriesMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var m in models)
+            {
+                if (!modelSeriesMap.ContainsKey(m.ModelNumber))
+                    modelSeriesMap[m.ModelNumber] = m.SeriesPattern;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var progress = new Progress<(int done, int total)>(p =>
+                    {
+                        state.Progress = p;
+                    });
+
+                    await NetworkScanService.ScanAsync(
+                        req.StartIp, req.EndIp, ouiMap, modelSeriesMap,
+                        result =>
+                        {
+                            var dto = new ScanResultDto(
+                                result.IpAddress, result.MacAddress,
+                                result.SeriesPattern, result.ModelNumber,
+                                result.Hostname, result.IsOnline);
+                            lock (state.Results) state.Results.Add(dto);
+
+                            _ = wsHub.BroadcastAsync(new WsEvent("scan.result", new
+                            {
+                                scanId,
+                                result = dto,
+                            }));
+                        },
+                        progress,
+                        CancellationToken.None);
+                }
+                catch { /* scan failed — mark complete with partial results */ }
+                finally
+                {
+                    state.Status = "complete";
+                }
+            });
+
+            return Results.Ok(new ScanStartResponse(scanId));
+        });
+
+        app.MapGet("/api/scan/{scanId}", (string scanId) =>
+        {
+            if (!_scans.TryGetValue(scanId, out var state))
+                return Results.NotFound(new ErrorResponse("Not found", $"Scan '{scanId}' not found."));
+
+            List<ScanResultDto> results;
+            lock (state.Results) results = state.Results.ToList();
+
+            var progress = new ScanProgressDto(state.Progress.done, state.Progress.total);
+            return Results.Ok(new ScanStatusResponse(state.Status, results, progress));
+        });
+    }
+
+    // ── CSV helpers ─────────────────────────────────────────────────────────
+
+    private static string CsvEscape(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r'))
+            return "\"" + value.Replace("\"", "\"\"") + "\"";
+        return value;
+    }
+
+    private static List<string> ParseCsvLine(string line)
+    {
+        var fields = new List<string>();
+        int i = 0;
+        while (i <= line.Length)
+        {
+            if (i == line.Length) { fields.Add(""); break; }
+
+            if (line[i] == '"')
+            {
+                // Quoted field
+                var sb = new System.Text.StringBuilder();
+                i++; // skip opening quote
+                while (i < line.Length)
+                {
+                    if (line[i] == '"')
+                    {
+                        if (i + 1 < line.Length && line[i + 1] == '"')
+                        {
+                            sb.Append('"');
+                            i += 2;
+                        }
+                        else
+                        {
+                            i++; // skip closing quote
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        sb.Append(line[i]);
+                        i++;
+                    }
+                }
+                fields.Add(sb.ToString());
+                // skip comma after closing quote
+                if (i < line.Length && line[i] == ',') i++;
+            }
+            else
+            {
+                // Unquoted field
+                int start = i;
+                while (i < line.Length && line[i] != ',') i++;
+                fields.Add(line[start..i]);
+                if (i < line.Length) i++; // skip comma
+            }
+        }
+        return fields;
     }
 }

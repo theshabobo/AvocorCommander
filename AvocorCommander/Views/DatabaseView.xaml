@@ -137,6 +137,11 @@
                                 <Button Content="New"    Style="{StaticResource SecondaryButton}" Command="{Binding NewCommandCmd}"    Margin="0,0,8,0"/>
                                 <Button Content="Delete" Style="{StaticResource DangerButton}"    Command="{Binding DeleteCommandCmd}"/>
                             </StackPanel>
+                            <Separator Margin="0,10,0,6"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="Export CSV" Style="{StaticResource SecondaryButton}" Command="{Binding ExportCommandsCsvCommand}" Margin="0,0,8,0"/>
+                                <Button Content="Import CSV" Style="{StaticResource SecondaryButton}" Command="{Binding ImportCommandsCsvCommand}"/>
+                            </StackPanel>
                         </StackPanel>
                     </ScrollViewer>
                 </Border>

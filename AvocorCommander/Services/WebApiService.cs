@@ -21,11 +21,12 @@ public sealed class WebApiService : IDisposable
     private readonly SchedulerService   _scheduler;
     private readonly MacroRunnerService _macroRunner;
 
-    private ServerDbService?  _serverDb;
-    private JwtService?       _jwt;
-    private WebSocketHub?     _wsHub;
-    private WebApplication?   _app;
-    private Task?             _runTask;
+    private ServerDbService?      _serverDb;
+    private JwtService?           _jwt;
+    private WebSocketHub?         _wsHub;
+    private HealthMonitorService? _healthMonitor;
+    private WebApplication?       _app;
+    private Task?                 _runTask;
 
     /// <summary>True while the HTTP server is running.</summary>
     private volatile bool _isRunning;
@@ -72,6 +73,11 @@ public sealed class WebApiService : IDisposable
 
         _wsHub = new WebSocketHub(_serverDb, _jwt, _connMgr, _scheduler, _macroRunner);
 
+        // Create and wire health monitor
+        _healthMonitor = new HealthMonitorService(_db, _connMgr);
+        _wsHub.SubscribeHealthMonitor(_healthMonitor);
+        _healthMonitor.Start(60);
+
         // Wire web prompt handler so API-initiated macros push prompts to web clients
         _macroRunner.WebPromptHandler = _wsHub.HandleWebPromptAsync;
 
@@ -93,6 +99,37 @@ public sealed class WebApiService : IDisposable
         // CORS service registration (required before UseCors)
         builder.Services.AddCors();
 
+        // Swagger / OpenAPI
+        builder.Services.AddEndpointsApiExplorer();
+        builder.Services.AddSwaggerGen(opts =>
+        {
+            opts.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+            {
+                Title   = "Avocor Commander API",
+                Version = "4.1.0",
+                Description = "REST API for controlling Avocor displays. Authenticate with an API key (X-API-Key header) or JWT bearer token (POST /api/auth/login).",
+            });
+            opts.AddSecurityDefinition("ApiKey", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+                In   = Microsoft.OpenApi.Models.ParameterLocation.Header,
+                Name = "X-API-Key",
+                Description = "API key from Settings > API Keys",
+            });
+            opts.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Type   = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+                Scheme = "bearer",
+                BearerFormat = "JWT",
+                Description  = "JWT token from POST /api/auth/login",
+            });
+            opts.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+            {
+                { new Microsoft.OpenApi.Models.OpenApiSecurityScheme { Reference = new Microsoft.OpenApi.Models.OpenApiReference { Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, Id = "ApiKey" } }, Array.Empty<string>() },
+                { new Microsoft.OpenApi.Models.OpenApiSecurityScheme { Reference = new Microsoft.OpenApi.Models.OpenApiReference { Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, Id = "Bearer" } }, Array.Empty<string>() },
+            });
+        });
+
         // JSON options
         builder.Services.ConfigureHttpJsonOptions(opts =>
         {
@@ -103,6 +140,14 @@ public sealed class WebApiService : IDisposable
 
         _app = builder.Build();
 
+        // Swagger UI at /api/docs
+        _app.UseSwagger();
+        _app.UseSwaggerUI(opts =>
+        {
+            opts.SwaggerEndpoint("/swagger/v1/swagger.json", "Avocor Commander API v1");
+            opts.RoutePrefix = "api/docs";
+        });
+
         // CORS — allow all (the user controls network access via firewall)
         _app.UseCors(policy => policy
             .AllowAnyOrigin()
@@ -112,25 +157,37 @@ public sealed class WebApiService : IDisposable
         // Static files — web portal is embedded in the exe as resources.
         // A physical wwwroot/ folder (if present) takes priority, allowing
         // custom logo uploads and local overrides without recompiling.
-        var wwwroot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wwwroot");
-        var embeddedProvider = new Microsoft.Extensions.FileProviders.ManifestEmbeddedFileProvider(
-            typeof(WebApiService).Assembly, "wwwroot");
-
-        Microsoft.Extensions.FileProviders.IFileProvider fileProvider;
-        if (Directory.Exists(wwwroot))
+        var wwwroot = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath) ?? AppDomain.CurrentDomain.BaseDirectory, "wwwroot");
+        try
         {
-            // Composite: physical folder first (overrides), then embedded fallback
-            fileProvider = new Microsoft.Extensions.FileProviders.CompositeFileProvider(
-                new Microsoft.Extensions.FileProviders.PhysicalFileProvider(wwwroot),
-                embeddedProvider);
-        }
-        else
-        {
-            fileProvider = embeddedProvider;
-        }
+            var embeddedProvider = new Microsoft.Extensions.FileProviders.ManifestEmbeddedFileProvider(
+                typeof(WebApiService).Assembly, "wwwroot");
 
-        _app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
-        _app.UseStaticFiles(new StaticFileOptions { FileProvider = fileProvider });
+            Microsoft.Extensions.FileProviders.IFileProvider fileProvider;
+            if (Directory.Exists(wwwroot))
+            {
+                fileProvider = new Microsoft.Extensions.FileProviders.CompositeFileProvider(
+                    new Microsoft.Extensions.FileProviders.PhysicalFileProvider(wwwroot),
+                    embeddedProvider);
+            }
+            else
+            {
+                fileProvider = embeddedProvider;
+            }
+
+            _app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
+            _app.UseStaticFiles(new StaticFileOptions { FileProvider = fileProvider });
+        }
+        catch
+        {
+            // Fallback: serve from physical wwwroot if embedded resources fail
+            if (Directory.Exists(wwwroot))
+            {
+                var physProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(wwwroot);
+                _app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = physProvider });
+                _app.UseStaticFiles(new StaticFileOptions { FileProvider = physProvider });
+            }
+        }
 
         // WebSocket support
         _app.UseWebSockets(new WebSocketOptions
@@ -213,11 +270,13 @@ public sealed class WebApiService : IDisposable
             catch { }
         }
 
+        _healthMonitor?.Dispose();
         _wsHub?.Dispose();
         _serverDb?.Dispose();
 
         _app = null;
         _wsHub = null;
+        _healthMonitor = null;
         _serverDb = null;
         _jwt = null;
     }

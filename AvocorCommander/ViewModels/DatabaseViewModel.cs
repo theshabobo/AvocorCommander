@@ -1,7 +1,10 @@
 using AvocorCommander.Core;
 using AvocorCommander.Models;
 using AvocorCommander.Services;
+using Microsoft.Win32;
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Input;
 
@@ -124,9 +127,11 @@ public sealed class DatabaseViewModel : BaseViewModel
 
     // ── Commands (ICommand) ───────────────────────────────────────────────────
 
-    public ICommand SaveCommandCmd       { get; }
-    public ICommand DeleteCommandCmd     { get; }
-    public ICommand NewCommandCmd        { get; }
+    public ICommand SaveCommandCmd           { get; }
+    public ICommand DeleteCommandCmd         { get; }
+    public ICommand NewCommandCmd            { get; }
+    public ICommand ExportCommandsCsvCommand { get; }
+    public ICommand ImportCommandsCsvCommand { get; }
 
     public ICommand SaveModelCmd         { get; }
     public ICommand DeleteModelCmd       { get; }
@@ -153,9 +158,11 @@ public sealed class DatabaseViewModel : BaseViewModel
     {
         _db = db;
 
-        SaveCommandCmd       = new RelayCommand(SaveCommand,   () => !string.IsNullOrWhiteSpace(CmdName));
-        DeleteCommandCmd     = new RelayCommand(DeleteCommand, () => HasCommandSelection);
-        NewCommandCmd        = new RelayCommand(NewCommand);
+        SaveCommandCmd           = new RelayCommand(SaveCommand,   () => !string.IsNullOrWhiteSpace(CmdName));
+        DeleteCommandCmd         = new RelayCommand(DeleteCommand, () => HasCommandSelection);
+        NewCommandCmd            = new RelayCommand(NewCommand);
+        ExportCommandsCsvCommand = new RelayCommand(ExportCommandsCsv);
+        ImportCommandsCsvCommand = new RelayCommand(ImportCommandsCsv);
 
         SaveModelCmd         = new RelayCommand(SaveModel,   () => !string.IsNullOrWhiteSpace(ModelNumber));
         DeleteModelCmd       = new RelayCommand(DeleteModel, () => HasModelSelection);
@@ -386,6 +393,157 @@ public sealed class DatabaseViewModel : BaseViewModel
 
         _db.SetGroupMembers(SelectedGroup.Id, SelectedGroup.MemberDeviceIds);
         OnPropertyChanged(nameof(SelectedGroup));
+    }
+
+    // ── CSV Import / Export ─────────────────────────────────────────────────
+
+    private static string CsvEscape(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return "\"\"";
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r'))
+            return "\"" + value.Replace("\"", "\"\"") + "\"";
+        return value;
+    }
+
+    private static List<string> ParseCsvLine(string line)
+    {
+        var fields = new List<string>();
+        int i = 0;
+        while (i <= line.Length)
+        {
+            if (i == line.Length) { fields.Add(string.Empty); break; }
+
+            if (line[i] == '"')
+            {
+                var sb = new StringBuilder();
+                i++; // skip opening quote
+                while (i < line.Length)
+                {
+                    if (line[i] == '"')
+                    {
+                        if (i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i += 2; }
+                        else { i++; break; }
+                    }
+                    else { sb.Append(line[i]); i++; }
+                }
+                fields.Add(sb.ToString());
+                if (i < line.Length && line[i] == ',') i++; // skip comma
+            }
+            else
+            {
+                int next = line.IndexOf(',', i);
+                if (next < 0) { fields.Add(line[i..]); break; }
+                fields.Add(line[i..next]);
+                i = next + 1;
+            }
+        }
+        return fields;
+    }
+
+    private void ExportCommandsCsv()
+    {
+        var dlg = new SaveFileDialog
+        {
+            Filter = "CSV Files (*.csv)|*.csv",
+            FileName = "commands_export.csv",
+            Title = "Export Commands as CSV"
+        };
+
+        if (dlg.ShowDialog() != true) return;
+
+        try
+        {
+            var cmds = _db.GetAllCommands();
+            var sb = new StringBuilder();
+            sb.AppendLine("SeriesPattern,CommandCategory,CommandName,CommandCode,Notes,Port,CommandFormat");
+
+            foreach (var c in cmds)
+            {
+                sb.AppendLine(string.Join(",",
+                    CsvEscape(c.SeriesPattern),
+                    CsvEscape(c.CommandCategory),
+                    CsvEscape(c.CommandName),
+                    CsvEscape(c.CommandCode),
+                    CsvEscape(c.Notes),
+                    c.Port.ToString(),
+                    CsvEscape(c.CommandFormat)));
+            }
+
+            File.WriteAllText(dlg.FileName, sb.ToString(), Encoding.UTF8);
+            StatusMessage = $"Exported {cmds.Count} command(s) to CSV.";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Export failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void ImportCommandsCsv()
+    {
+        var dlg = new OpenFileDialog
+        {
+            Filter = "CSV Files (*.csv)|*.csv",
+            Title = "Import Commands from CSV"
+        };
+
+        if (dlg.ShowDialog() != true) return;
+
+        try
+        {
+            var lines = File.ReadAllLines(dlg.FileName, Encoding.UTF8);
+            if (lines.Length < 2) { MessageBox.Show("CSV file is empty or has no data rows.", "Import", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+
+            // Skip header
+            var existing = _db.GetAllCommands();
+            var existingKeys = new HashSet<string>(
+                existing.Select(c => $"{c.SeriesPattern}|{c.CommandCategory}|{c.CommandName}"),
+                StringComparer.OrdinalIgnoreCase);
+
+            int imported = 0, skipped = 0, errors = 0;
+
+            for (int i = 1; i < lines.Length; i++)
+            {
+                if (string.IsNullOrWhiteSpace(lines[i])) continue;
+                try
+                {
+                    var fields = ParseCsvLine(lines[i]);
+                    if (fields.Count < 7) { errors++; continue; }
+
+                    var series   = fields[0].Trim();
+                    var category = fields[1].Trim();
+                    var name     = fields[2].Trim();
+                    var code     = fields[3].Trim();
+                    var notes    = fields[4].Trim();
+                    var port     = int.TryParse(fields[5].Trim(), out var p) ? p : 0;
+                    var format   = fields[6].Trim();
+
+                    var key = $"{series}|{category}|{name}";
+                    if (existingKeys.Contains(key)) { skipped++; continue; }
+
+                    _db.InsertCommand(new CommandEntry
+                    {
+                        SeriesPattern   = series,
+                        CommandCategory = category,
+                        CommandName     = name,
+                        CommandCode     = code,
+                        Notes           = notes,
+                        Port            = port,
+                        CommandFormat   = string.IsNullOrEmpty(format) ? "HEX" : format,
+                    });
+                    existingKeys.Add(key);
+                    imported++;
+                }
+                catch { errors++; }
+            }
+
+            MessageBox.Show($"Imported {imported}, Skipped {skipped}, Errors {errors}", "CSV Import Results", MessageBoxButton.OK, MessageBoxImage.Information);
+            StatusMessage = $"CSV import: {imported} imported, {skipped} skipped, {errors} errors.";
+            LoadCommands();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Import failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     // ── Helper ────────────────────────────────────────────────────────────────

@@ -26,6 +26,7 @@ public sealed class WebSocketHub : IDisposable
     private readonly ConnectionManager _connMgr;
     private readonly SchedulerService  _scheduler;
     private readonly MacroRunnerService _macroRunner;
+    private HealthMonitorService? _healthMonitor;
 
     private static readonly JsonSerializerOptions _jsonOpts = new()
     {
@@ -53,6 +54,26 @@ public sealed class WebSocketHub : IDisposable
         _macroRunner.StepCompleted += OnMacroStepCompleted;
         _macroRunner.RunCompleted  += OnMacroRunCompleted;
         _macroRunner.RunFailed     += OnMacroRunFailed;
+    }
+
+    /// <summary>
+    /// Subscribe to HealthMonitorService events for broadcasting device health changes.
+    /// Called after the HealthMonitorService is created.
+    /// </summary>
+    public void SubscribeHealthMonitor(HealthMonitorService healthMonitor)
+    {
+        _healthMonitor = healthMonitor;
+        _healthMonitor.DeviceStatusChanged += OnDeviceHealthChanged;
+    }
+
+    private void OnDeviceHealthChanged(object? sender, (int deviceId, string status) e)
+    {
+        _ = BroadcastAsync(new WsEvent("device.health", new
+        {
+            deviceId  = e.deviceId,
+            status    = e.status,
+            timestamp = DateTime.UtcNow.ToString("o"),
+        }));
     }
 
     // ── Event handlers → broadcast ───────────────────────────────────────────
@@ -336,6 +357,9 @@ public sealed class WebSocketHub : IDisposable
         _macroRunner.StepCompleted -= OnMacroStepCompleted;
         _macroRunner.RunCompleted  -= OnMacroRunCompleted;
         _macroRunner.RunFailed     -= OnMacroRunFailed;
+
+        if (_healthMonitor != null)
+            _healthMonitor.DeviceStatusChanged -= OnDeviceHealthChanged;
 
         foreach (var (_, info) in _clients)
         {

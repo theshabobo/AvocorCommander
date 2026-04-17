@@ -52,6 +52,15 @@ public sealed class TcpConnectionService : IConnectionService
         if (_stream == null || !IsConnected) return null;
         try
         {
+            // Drain any stale bytes from previous commands (prevents response
+            // shifting on displays like A-Series that echo asynchronously).
+            if (_stream.DataAvailable)
+            {
+                var drain = new byte[4096];
+                while (_stream.DataAvailable)
+                    await _stream.ReadAsync(drain);
+            }
+
             await _stream.WriteAsync(data);
 
             using var cts   = new CancellationTokenSource(receiveTimeoutMs);

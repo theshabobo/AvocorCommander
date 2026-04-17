@@ -17,7 +17,7 @@ public sealed class DatabaseService : IDisposable
 
     public DatabaseService()
     {
-        var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        var baseDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppDomain.CurrentDomain.BaseDirectory;
         _commandsDbPath = Path.Combine(baseDir, "commands.db");
         _userDataDbPath = Path.Combine(baseDir, "userdata.db");
         _legacyDbPath   = Path.Combine(baseDir, "AvocorCommander.db");
@@ -98,7 +98,7 @@ public sealed class DatabaseService : IDisposable
     /// </summary>
     private void ApplyCommandDbUpdate()
     {
-        var updatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AvocorCommander_update.db");
+        var updatePath = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath) ?? AppDomain.CurrentDomain.BaseDirectory, "AvocorCommander_update.db");
         if (!File.Exists(updatePath)) return;
 
         try
@@ -268,6 +268,22 @@ public sealed class DatabaseService : IDisposable
                 CommandFormat TEXT    NOT NULL DEFAULT 'HEX',
                 SortOrder     INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(ButtonId) REFERENCES PanelButtons(Id) ON DELETE CASCADE
+            );
+            """;
+        cmd.ExecuteNonQuery();
+
+        // DeviceCommands — stores per-device discovered commands (e.g. app Open/Close)
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS DeviceCommands (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                DeviceId        INTEGER NOT NULL,
+                CommandCategory TEXT    NOT NULL,
+                CommandName     TEXT    NOT NULL,
+                CommandCode     TEXT    NOT NULL,
+                CommandFormat   TEXT    NOT NULL DEFAULT 'ASCII',
+                Notes           TEXT    DEFAULT '',
+                DiscoveredAt    TEXT    DEFAULT '',
+                FOREIGN KEY(DeviceId) REFERENCES StoredDevices(id) ON DELETE CASCADE
             );
             """;
         cmd.ExecuteNonQuery();
@@ -1264,6 +1280,107 @@ public sealed class DatabaseService : IDisposable
         while (rdr.Read())
             dict[rdr.GetString(0)] = rdr.GetString(1);
         return dict;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  DEVICE COMMANDS  (userdata.db)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Returns all DeviceCommands for a device, mapped to CommandEntry objects.
+    /// Port is looked up from the device's series commands in commands.db.
+    /// </summary>
+    public List<CommandEntry> GetDeviceCommands(int deviceId)
+    {
+        // Look up port from the device's series commands
+        int port = 0;
+        var device = GetAllDevices().FirstOrDefault(d => d.Id == deviceId);
+        if (device != null)
+        {
+            var series = GetSeriesForModel(device.ModelNumber);
+            if (!string.IsNullOrEmpty(series))
+            {
+                var seriesCmd = GetCommandsBySeries(series).FirstOrDefault();
+                if (seriesCmd != null) port = seriesCmd.Port;
+            }
+        }
+
+        using var conn = OpenUserDataConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT id, CommandCategory, CommandName, CommandCode, CommandFormat,
+                   COALESCE(Notes,''), COALESCE(DiscoveredAt,'')
+            FROM   DeviceCommands
+            WHERE  DeviceId = $id
+            ORDER  BY CommandCategory, CommandName;
+            """;
+        cmd.Parameters.AddWithValue("$id", deviceId);
+
+        var list = new List<CommandEntry>();
+        using var rdr = cmd.ExecuteReader();
+        while (rdr.Read())
+        {
+            list.Add(new CommandEntry
+            {
+                Id              = rdr.GetInt32(0),
+                SeriesPattern   = "",  // device-specific, not series-level
+                CommandCategory = rdr.GetString(1),
+                CommandName     = rdr.GetString(2),
+                CommandCode     = rdr.GetString(3),
+                CommandFormat   = rdr.GetString(4),
+                Notes           = rdr.GetString(5),
+                Port            = port,
+            });
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// Replaces all device commands for a device with the given set.
+    /// </summary>
+    public void SetDeviceCommands(int deviceId, IEnumerable<(string category, string name, string code, string format)> commands)
+    {
+        using var conn = OpenUserDataConnection();
+        using var tx   = conn.BeginTransaction();
+
+        using var del = conn.CreateCommand();
+        del.Transaction = tx;
+        del.CommandText = "DELETE FROM DeviceCommands WHERE DeviceId=$id;";
+        del.Parameters.AddWithValue("$id", deviceId);
+        del.ExecuteNonQuery();
+
+        var ts = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+        using var ins = conn.CreateCommand();
+        ins.Transaction = tx;
+        ins.CommandText = """
+            INSERT INTO DeviceCommands (DeviceId, CommandCategory, CommandName, CommandCode, CommandFormat, DiscoveredAt)
+            VALUES ($did, $cat, $name, $code, $fmt, $ts);
+            """;
+
+        foreach (var (category, name, code, format) in commands)
+        {
+            ins.Parameters.Clear();
+            ins.Parameters.AddWithValue("$did",  deviceId);
+            ins.Parameters.AddWithValue("$cat",  category);
+            ins.Parameters.AddWithValue("$name", name);
+            ins.Parameters.AddWithValue("$code", code);
+            ins.Parameters.AddWithValue("$fmt",  format);
+            ins.Parameters.AddWithValue("$ts",   ts);
+            ins.ExecuteNonQuery();
+        }
+
+        tx.Commit();
+    }
+
+    /// <summary>Removes all device-specific commands for a device.</summary>
+    public void ClearDeviceCommands(int deviceId)
+    {
+        using var conn = OpenUserDataConnection();
+        using var cmd  = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM DeviceCommands WHERE DeviceId=$id;";
+        cmd.Parameters.AddWithValue("$id", deviceId);
+        cmd.ExecuteNonQuery();
     }
 
     public void Dispose() { /* connections are opened/closed per call — nothing to dispose */ }
