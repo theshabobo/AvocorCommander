@@ -30,13 +30,28 @@ public sealed class MacroRunnerService
     }
     public event EventHandler<PromptRequest>? PromptRequested;
 
+    /// <summary>
+    /// When set, API-initiated macro runs call this delegate for prompt steps
+    /// instead of raising PromptRequested (which goes to the WPF dialog).
+    /// The delegate should push the prompt to web clients and return true
+    /// (continue) or false (abort).
+    /// </summary>
+    public Func<string, string, string, Task<bool>>? WebPromptHandler { get; set; }
+
     public MacroRunnerService(DatabaseService db, ConnectionManager connMgr)
     {
         _db      = db;
         _connMgr = connMgr;
     }
 
-    public async Task RunAsync(MacroEntry macro, int deviceId)
+    /// <summary>
+    /// Runs a macro on a device. When <paramref name="autoPrompts"/> is true,
+    /// prompt steps are automatically continued without raising PromptRequested.
+    /// The API layer passes true so web-initiated runs don't block on the WPF
+    /// MessageBox. Desktop-initiated runs pass false (default) so the WPF dialog
+    /// appears as expected.
+    /// </summary>
+    public async Task RunAsync(MacroEntry macro, int deviceId, bool autoPrompts = false)
     {
         var devices = _db.GetAllDevices();
         var device  = devices.FirstOrDefault(d => d.Id == deviceId);
@@ -63,7 +78,25 @@ public sealed class MacroRunnerService
                         ? "Macro paused. Click Continue to proceed or Cancel to abort."
                         : step.PromptText;
 
-                    if (PromptRequested == null)
+                    if (autoPrompts && WebPromptHandler != null)
+                    {
+                        // API-initiated run — push prompt to web clients and wait for response
+                        StepCompleted?.Invoke(this, $"Step {step.StepOrder}: waiting for web client to continue...");
+                        bool webContinue = await WebPromptHandler(msg, macro.MacroName, device?.DeviceName ?? $"Device {deviceId}");
+                        if (!webContinue)
+                        {
+                            StepCompleted?.Invoke(this, $"Step {step.StepOrder}: cancelled at web prompt — aborting macro");
+                            RunFailed?.Invoke(this, "Macro aborted at prompt step.");
+                            return;
+                        }
+                        StepCompleted?.Invoke(this, $"Step {step.StepOrder}: web prompt acknowledged — continuing");
+                    }
+                    else if (autoPrompts)
+                    {
+                        // API-initiated but no web handler — auto-continue
+                        StepCompleted?.Invoke(this, $"Step {step.StepOrder}: (prompt, auto-continued) {msg}");
+                    }
+                    else if (PromptRequested == null)
                     {
                         // No UI listener — can't prompt; treat as auto-continue.
                         StepCompleted?.Invoke(this, $"Step {step.StepOrder}: (prompt, no UI handler — continuing) {msg}");

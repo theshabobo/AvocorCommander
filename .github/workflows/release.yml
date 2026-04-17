@@ -74,7 +74,8 @@ jobs:
 
             Download `AvocorCommander.exe` and `commands.db` below and place them in the same folder.
             Double-click the exe to run — no installer needed. .NET runtime is bundled.
-            User data (devices, groups, macros, schedules) is stored in `userdata.db` which is created on first run and never replaced by updates.
+            User data is stored in `userdata.db`, server config in `server.db` — both created on first run, never replaced by updates.
+            REST API available at http://0.0.0.0:5105 (see /health endpoint).
           draft: false
           prerelease: false
           files: |

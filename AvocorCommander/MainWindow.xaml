@@ -302,6 +302,17 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Bottom: API server status -->
+                <Border DockPanel.Dock="Bottom"
+                        BorderBrush="{DynamicResource DividerBrush}"
+                        BorderThickness="0,1,0,0"
+                        Padding="16,6">
+                    <TextBlock Text="{Binding ApiStatus}"
+                               FontSize="9"
+                               Foreground="{DynamicResource SubtleTextBrush}"
+                               TextWrapping="Wrap"/>
+                </Border>
+
                 <!-- Bottom: global status -->
                 <Border DockPanel.Dock="Bottom"
                         BorderBrush="{DynamicResource DividerBrush}"

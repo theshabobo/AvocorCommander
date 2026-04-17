@@ -16,6 +16,7 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
     public readonly ConnectionManager  Connections;
     public readonly SchedulerService   Scheduler;
     public readonly MacroRunnerService MacroRunner;
+    public readonly WebApiService      WebApi;
 
     // ── Section ViewModels ────────────────────────────────────────────────────
 
@@ -121,7 +122,7 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
     // ── Title / version ───────────────────────────────────────────────────────
 
     public string AppTitle   => "AVOCOR COMMANDER";
-    public string AppVersion => "V3.5.0";
+    public string AppVersion => "V4.0.0";
 
     public BaseViewModel CurrentViewModel => CurrentSection switch
     {
@@ -147,12 +148,19 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
         set => Set(ref _globalStatus, value);
     }
 
+    public string ApiStatus => WebApi.IsRunning
+        ? $"API ● http://0.0.0.0:{WebApi.Port}"
+        : "API ○ stopped";
+
     public MainViewModel()
     {
         Database    = new DatabaseService();
         Connections = new ConnectionManager();
         Scheduler   = new SchedulerService(Database, Connections);
         MacroRunner = new MacroRunnerService(Database, Connections);
+        WebApi      = new WebApiService(Database, Connections, Scheduler, MacroRunner);
+        WebApi.StatusChanged += (_, _) =>
+            System.Windows.Application.Current?.Dispatcher.Invoke(() => OnPropertyChanged(nameof(ApiStatus)));
 
         DevicesVM   = new DevicesViewModel(Database, Connections);
         ControlVM   = new ControlViewModel(Database, Connections);
@@ -320,6 +328,9 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
         // Startup auto-connect
         _ = StartupAutoConnectAsync();
 
+        // Start embedded API server (fire-and-forget — runs on background thread)
+        _ = WebApi.StartAsync();
+
         // Kick off silent background update check — no await, intentionally fire-and-forget
         _ = RunStartupUpdateCheckAsync();
     }
@@ -365,6 +376,7 @@ public sealed class MainViewModel : BaseViewModel, IDisposable
 
     public void Dispose()
     {
+        WebApi.Dispose();
         DashboardVM.Dispose();
         StatusVM.Dispose();
         Scheduler.Dispose();
